@@ -13,8 +13,7 @@ const PORT = process.env.PORT || 3001;
 
 // Initialize RoomService client
 const client = new RoomServiceClient({
-  host: process.env.ROOM_SERVICE_HOST?.split(':')[0] || 'localhost',
-  port: parseInt(process.env.ROOM_SERVICE_HOST?.split(':')[1] || '50050'),
+  host: process.env.ROOM_SERVICE_HOST,
   apiKey: process.env.ROOM_SERVICE_API_KEY || '123'
 });
 
