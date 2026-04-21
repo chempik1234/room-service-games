@@ -1,6 +1,6 @@
 {
   "name": "@chempik1234/room-service-js",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "JavaScript/TypeScript SDK for RoomService gRPC API - Build real-time multiplayer games easily!",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
