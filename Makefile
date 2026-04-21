@@ -68,9 +68,9 @@ restart: stop all
 # Install dependencies
 install:
 	@echo "📦 Installing dependencies for all games..."
-	@cd tic-tac-toe && npm install
-	@cd pixel-battle && npm install
-	@cd gartic-phone && npm install
+	@cd tic-tac-toe && npm install --silent
+	@cd pixel-battle && npm install --silent
+	@cd gartic-phone && npm install --silent
 	@echo "✅ Dependencies installed!"
 
 # Clean build files

@@ -3,11 +3,6 @@
   "version": "1.0.0",
   "description": "Multiplayer games using RoomService JS SDK - Deployed on Railway",
   "private": true,
-  "workspaces": [
-    "pixel-battle",
-    "gartic-phone",
-    "tic-tac-toe"
-  ],
   "scripts": {
     "install:all": "npm install",
     "start:pixel-battle": "npm start --workspace=pixel-battle",
