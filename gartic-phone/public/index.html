@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gartic Phone - Drawing & Guessing Game</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎨 Gartic Phone</h1>
+            <p class="subtitle">Draw. Guess. Score Points!</p>
+        </header>
+
+        <div id="lobby-section">
+            <div class="room-list">
+                <h2>Available Games</h2>
+                <div id="rooms-container">
+                    <p>Loading games...</p>
+                </div>
+                <button id="refresh-rooms" class="btn btn-secondary">Refresh Games</button>
+            </div>
+
+            <div class="join-create">
+                <div class="create-game">
+                    <h3>Create New Game</h3>
+                    <input type="text" id="room-name" placeholder="Game name (optional)" maxlength="30">
+                    <input type="number" id="total-rounds" placeholder="Rounds (default: 5)" min="1" max="10" value="5">
+                    <button id="create-room" class="btn btn-primary">Create Game</button>
+                </div>
+
+                <div class="join-game">
+                    <h3>Join Existing Game</h3>
+                    <input type="text" id="room-id" placeholder="Enter Game ID">
+                    <input type="text" id="player-name" placeholder="Your nickname" maxlength="20" value="Player">
+                    <button id="join-room" class="btn btn-success">Join Game</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="game-section" style="display: none;">
+            <div class="game-header">
+                <div class="game-info">
+                    <span id="current-game-name">Game: </span>
+                    <span id="round-info">Round: 0/0</span>
+                    <span id="timer">⏱️ 0:00</span>
+                </div>
+                <div class="game-controls">
+                    <button id="start-game" class="btn btn-small btn-primary">Start Game</button>
+                    <button id="leave-room" class="btn btn-small btn-danger">Leave</button>
+                </div>
+            </div>
+
+            <div class="game-container">
+                <div class="sidebar">
+                    <div class="players-section">
+                        <h3>Players</h3>
+                        <div id="players-list"></div>
+                    </div>
+
+                    <div class="scores-section">
+                        <h3>Scores</h3>
+                        <div id="scores-list"></div>
+                    </div>
+
+                    <div class="role-indicator">
+                        <div id="role-display"></div>
+                    </div>
+                </div>
+
+                <div class="main-game-area">
+                    <!-- Drawing Phase -->
+                    <div id="drawing-phase" style="display: none;">
+                        <div class="word-display">
+                            <h2>Draw this word:</h2>
+                            <div id="current-word" class="word-text"></div>
+                            <p class="instructions">You have 30 seconds to draw!</p>
+                        </div>
+
+                        <div class="canvas-container">
+                            <canvas id="game-canvas" width="600" height="400"></canvas>
+                            <div class="drawing-tools">
+                                <input type="color" id="color-picker" value="#000000" title="Choose color">
+                                <input type="range" id="brush-size" min="1" max="20" value="5" title="Brush size">
+                                <button id="clear-canvas" class="btn btn-small btn-warning">Clear</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Guessing Phase -->
+                    <div id="guessing-phase" style="display: none;">
+                        <div class="guess-display">
+                            <h2>Guess what's being drawn!</h2>
+                            <div class="canvas-viewer">
+                                <canvas id="viewer-canvas" width="600" height="400"></canvas>
+                            </div>
+
+                            <div class="guess-input-area">
+                                <input type="text" id="guess-input" placeholder="Type your guess here..." maxlength="50">
+                                <button id="submit-guess" class="btn btn-primary">Submit Guess</button>
+                            </div>
+
+                            <div class="guesses-chat">
+                                <h3>Guesses</h3>
+                                <div id="guesses-list"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Round Results -->
+                    <div id="results-phase" style="display: none;">
+                        <div class="results-display">
+                            <h2>Round Results</h2>
+                            <div id="round-results"></div>
+                            <p>Next round starting soon...</p>
+                        </div>
+                    </div>
+
+                    <!-- Game Over -->
+                    <div id="gameover-phase" style="display: none;">
+                        <div class="gameover-display">
+                            <h2>🎉 Game Over! 🎉</h2>
+                            <div id="final-results"></div>
+                            <p>New game starting soon...</p>
+                        </div>
+                    </div>
+
+                    <!-- Waiting Phase -->
+                    <div id="waiting-phase" style="display: none;">
+                        <div class="waiting-display">
+                            <h2>Waiting for players...</h2>
+                            <p>Minimum 2 players needed to start</p>
+                            <div id="waiting-players"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification" class="notification"></div>
+
+    <script src="game.js"></script>
+</body>
+</html>
