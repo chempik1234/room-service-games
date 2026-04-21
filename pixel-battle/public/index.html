@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Battle - Multiplayer Canvas Game</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎨 Pixel Battle</h1>
+            <p class="subtitle">Real-time multiplayer drawing game</p>
+        </header>
+
+        <div id="lobby-section">
+            <div class="room-list">
+                <h2>Available Rooms</h2>
+                <div id="rooms-container">
+                    <p>Loading rooms...</p>
+                </div>
+                <button id="refresh-rooms" class="btn btn-secondary">Refresh Rooms</button>
+            </div>
+
+            <div class="join-create">
+                <div class="create-room">
+                    <h3>Create New Room</h3>
+                    <input type="text" id="room-name" placeholder="Room name (optional)" maxlength="30">
+                    <input type="number" id="max-size" placeholder="Max players (default: 10)" min="2" max="50">
+                    <button id="create-room" class="btn btn-primary">Create Room</button>
+                </div>
+
+                <div class="join-room">
+                    <h3>Join Existing Room</h3>
+                    <input type="text" id="room-id" placeholder="Enter Room ID">
+                    <input type="text" id="player-name" placeholder="Your nickname" maxlength="20" value="Player">
+                    <button id="join-room" class="btn btn-success">Join Room</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="game-section" style="display: none;">
+            <div class="game-header">
+                <div class="room-info">
+                    <span id="current-room-name">Room: </span>
+                    <span id="player-count">Players: 0</span>
+                </div>
+                <div class="game-controls">
+                    <input type="color" id="color-picker" value="#000000" title="Choose color">
+                    <input type="range" id="brush-size" min="1" max="20" value="5" title="Brush size">
+                    <button id="clear-canvas" class="btn btn-small btn-warning">Clear All</button>
+                    <button id="leave-room" class="btn btn-small btn-danger">Leave Room</button>
+                </div>
+            </div>
+
+            <div class="game-container">
+                <div class="players-list">
+                    <h3>Players</h3>
+                    <ul id="players-list"></ul>
+                </div>
+
+                <div class="canvas-container">
+                    <canvas id="game-canvas" width="800" height="600"></canvas>
+                    <div class="canvas-info">
+                        <span class="coordinates">X: <span id="mouse-x">0</span>, Y: <span id="mouse-y">0</span></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification" class="notification"></div>
+
+    <script src="game.js"></script>
+</body>
+</html>

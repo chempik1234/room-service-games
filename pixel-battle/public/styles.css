@@ -1,0 +1,279 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+
+header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 30px;
+    text-align: center;
+}
+
+header h1 {
+    font-size: 2.5em;
+    margin-bottom: 10px;
+}
+
+.subtitle {
+    font-size: 1.1em;
+    opacity: 0.9;
+}
+
+#lobby-section {
+    padding: 30px;
+}
+
+.room-list {
+    margin-bottom: 30px;
+}
+
+.room-list h2 {
+    color: #333;
+    margin-bottom: 15px;
+}
+
+#rooms-container {
+    background: #f8f9fa;
+    border-radius: 5px;
+    padding: 20px;
+    min-height: 200px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.room-item {
+    background: white;
+    border: 2px solid #e9ecef;
+    border-radius: 5px;
+    padding: 15px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.room-item:hover {
+    border-color: #667eea;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.room-name {
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 5px;
+}
+
+.room-info {
+    color: #666;
+    font-size: 0.9em;
+}
+
+.join-create {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.create-room, .join-room {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 5px;
+}
+
+.create-room h3, .join-room h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+input {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 1em;
+}
+
+.btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 5px;
+    font-size: 1em;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-weight: bold;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.btn-primary {
+    background: #667eea;
+    color: white;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-success {
+    background: #28a745;
+    color: white;
+}
+
+.btn-warning {
+    background: #ffc107;
+    color: #333;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-small {
+    padding: 8px 15px;
+    width: auto;
+}
+
+#game-section {
+    padding: 20px;
+}
+
+.game-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 5px;
+}
+
+.room-info {
+    font-weight: bold;
+    color: #333;
+}
+
+.game-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.game-container {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 20px;
+}
+
+.players-list {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 5px;
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.players-list h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+#players-list {
+    list-style: none;
+}
+
+#players-list li {
+    padding: 8px;
+    margin-bottom: 5px;
+    background: white;
+    border-radius: 3px;
+    border-left: 3px solid #667eea;
+}
+
+.canvas-container {
+    position: relative;
+}
+
+#game-canvas {
+    border: 3px solid #333;
+    border-radius: 5px;
+    cursor: crosshair;
+    background: white;
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.canvas-info {
+    margin-top: 10px;
+    text-align: right;
+    color: #666;
+    font-size: 0.9em;
+}
+
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #333;
+    color: white;
+    padding: 15px 20px;
+    border-radius: 5px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    display: none;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.notification.show {
+    display: block;
+}
+
+@media (max-width: 768px) {
+    .join-create {
+        grid-template-columns: 1fr;
+    }
+
+    .game-container {
+        grid-template-columns: 1fr;
+    }
+
+    .players-list {
+        max-height: 200px;
+    }
+}

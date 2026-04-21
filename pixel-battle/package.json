@@ -1,0 +1,18 @@
+{
+  "name": "pixel-battle-demo",
+  "version": "1.0.0",
+  "description": "Pixel Battle Canvas - RoomService API Demonstration with gRPC Bridge",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "dotenv": "^16.0.0",
+    "room-service-js": "^1.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}
