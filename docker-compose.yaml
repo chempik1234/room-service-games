@@ -1,0 +1,24 @@
+services:
+  tic-tac-toe:
+    build:
+      context: ./tic-tac-toe
+      dockerfile: ../Dockerfile.node
+    ports:
+      - "3000:3000"
+    env_file: ./.env
+    environment:
+      PORT: 3000
+  pixel-battle:
+    build:
+      context: ./pixel-battle
+      dockerfile: ../Dockerfile.node
+    ports:
+      - "3001:3001"
+    env_file: ./.env
+  gartic-phone:
+    build:
+      context: ./gartic-phone
+      dockerfile: ../Dockerfile.node
+    ports:
+      - "3002:3002"
+    env_file: ./.env

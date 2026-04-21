@@ -77,12 +77,12 @@ header h1 {
 
 .room-name {
     font-weight: bold;
-    color: #333;
+    color: #333 !important;
     margin-bottom: 5px;
 }
 
 .room-info {
-    color: #666;
+    color: #333 !important;
     font-size: 0.9em;
 }
 
@@ -291,11 +291,12 @@ input {
     border-radius: 3px;
     font-size: 0.8em;
     font-weight: bold;
+    color: white !important;
 }
 
 .status-available {
     background: #28a745;
-    color: white;
+    color: white !important;
 }
 
 .status-full {

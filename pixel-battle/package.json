@@ -9,9 +9,10 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "express": "^4.18.0",
+    "@chempik1234/room-service-js": "^1.0.3",
     "dotenv": "^16.0.0",
-    "@chempik1234/room-service-js": "^1.0.0"
+    "express": "^4.18.0",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "nodemon": "^3.0.0"

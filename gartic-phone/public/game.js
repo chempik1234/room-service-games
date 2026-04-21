@@ -1,7 +1,7 @@
 // Game state
 let currentRoomId = null;
 let userId = null;
-let client = null;
+let socket = null; // Socket.io connection
 let players = new Map();
 let scores = new Map();
 let isDrawing = false;
@@ -27,6 +27,61 @@ function getUserId() {
 
 // Initialize user ID
 userId = getUserId();
+
+// Initialize Socket.io connection
+socket = io();
+
+// Socket.io event handlers
+socket.on('draw-line', (line) => {
+  console.log('Received draw-line:', line, 'Current phase:', gamePhase, 'My role:', myRole);
+  // Draw line from the current drawer (guessers watch on viewer canvas)
+  if (myRole === 'guesser' && (gamePhase === 'drawing' || gamePhase === 'guessing')) {
+    drawOnCanvas(line, viewerCtx);
+  }
+});
+
+socket.on('clear-canvas', () => {
+  // Clear canvas when drawer clears it
+  if (gamePhase === 'guessing') {
+    viewerCtx.fillStyle = 'white';
+    viewerCtx.fillRect(0, 0, viewerCanvas.width, viewerCanvas.height);
+  }
+});
+
+socket.on('player-guess', (data) => {
+  // Show other players' guesses in real-time
+  const { userId: guesserId, guess, isCorrect } = data;
+  if (guesserId !== userId) { // Don't show your own guesses
+    addGuessToList(guesserId, guess, isCorrect);
+    if (isCorrect) {
+      showNotification('🎉 Someone guessed correctly!');
+    }
+  }
+});
+
+socket.on('new-round', (roundData) => {
+  console.log('New round:', roundData);
+  handleNewRound(roundData);
+});
+
+socket.on('guessing-phase', (data) => {
+  console.log('Guessing phase started');
+  handleGuessingPhase();
+});
+
+socket.on('round-over', (results) => {
+  console.log('Round over:', results);
+  handleRoundOver(results);
+});
+
+socket.on('game-over', (finalResults) => {
+  console.log('Game over:', finalResults);
+  handleGameOver(finalResults);
+});
+
+socket.on('game-state-update', (gameState) => {
+  console.log('Game state update:', gameState);
+});
 
 // DOM elements
 const canvas = document.getElementById('game-canvas');
@@ -122,36 +177,35 @@ async function joinRoom() {
     }
 
     try {
-        // Import RoomService dynamically
-        const { RoomServiceClient } = await import('@chempik1234/room-service-js');
-
-        // Initialize client
-        client = new RoomServiceClient({
-            host: window.location.hostname,
-            port: parseInt(window.location.port) || 3002,
-            apiKey: '123'
-        });
-
-        // Connect to room
-        await client.connect();
-        currentRoomId = roomId;
-
-        // Join the room
-        await client.joinRoom(roomId, {
-            userId: userId,
-            name: playerName,
-            metadata: {
+        // Join room via HTTP API
+        const response = await fetch(`/api/rooms/${roomId}/join`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                playerName: playerName,
+                userId: userId,
                 color: colorPicker.value,
                 brushSize: brushSize.value
-            }
+            })
         });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to join room');
+        }
+
+        const data = await response.json();
+        currentRoomId = roomId;
+
+        // Join Socket.io room for real-time updates
+        socket.emit('join-game', roomId);
 
         // Switch to game view
         document.getElementById('lobby-section').style.display = 'none';
         document.getElementById('game-section').style.display = 'block';
 
-        // Setup event handlers
-        setupGameEvents(client);
+        // Setup polling for game state updates
+        setupGameStatePolling();
 
         showNotification('Joined game successfully!');
     } catch (error) {
@@ -162,10 +216,22 @@ async function joinRoom() {
 
 // Leave room
 async function leaveRoom() {
-    if (client && currentRoomId) {
+    if (currentRoomId) {
         try {
-            await client.leaveRoom(currentRoomId, userId);
-            await client.close();
+            // Leave room via HTTP API
+            await fetch('/api/leave', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    roomId: currentRoomId,
+                    userId: userId
+                })
+            });
+
+            // Leave Socket.io room
+            if (socket && currentRoomId) {
+                socket.emit('leave-room', currentRoomId);
+            }
 
             // Reset state
             currentRoomId = null;
@@ -195,6 +261,9 @@ async function leaveRoom() {
 async function startGame() {
     if (!currentRoomId) return;
 
+    const startButton = document.getElementById('start-game');
+    if (startButton) startButton.style.display = 'none';
+
     try {
         const response = await fetch(`/api/rooms/${currentRoomId}/start`, {
             method: 'POST',
@@ -205,84 +274,76 @@ async function startGame() {
         if (response.ok) {
             showNotification('Game started!');
         } else {
-            showNotification('Failed to start game');
+            const error = await response.json();
+            showNotification('Failed to start game: ' + (error.error || 'Unknown error'));
+            // Show button again if start failed
+            if (startButton) startButton.style.display = 'block';
         }
     } catch (error) {
         console.error('Error starting game:', error);
         showNotification('Error starting game');
+        // Show button again if start failed
+        if (startButton) startButton.style.display = 'block';
     }
 }
 
-// Setup game event handlers
-function setupGameEvents(client) {
-    // Handle user joined
-    client.on('joinedRoom', (event) => {
-        if (event.joinedRoom?.userFull) {
-            const user = event.joinedRoom.userFull;
-            players.set(user.id, user);
-            updatePlayersList();
-            checkCanStartGame();
-        }
-    });
+// Setup game state polling
+function setupGameStatePolling() {
+    let lastUpdate = Date.now();
 
-    // Handle user left
-    client.on('leftRoom', (event) => {
-        if (event.leftRoom?.kickedUserId) {
-            players.delete(event.leftRoom.kickedUserId);
-            updatePlayersList();
-            checkCanStartGame();
-        }
-    });
+    // Poll for game state updates every 2 seconds
+    setInterval(async () => {
+        if (!currentRoomId) return;
 
-    // Handle drawing data (batched)
-    client.on('dataEdited', (event) => {
-        if (event.dataEdited?.dataId === 'canvas_draw_batch') {
-            const batchData = JSON.parse(event.dataEdited.dataValue?.stringValue || '{}');
-            if (batchData.lines && Array.isArray(batchData.lines)) {
-                batchData.lines.forEach(line => drawOnCanvas(line, viewerCtx));
+        try {
+            // Update players list first
+            try {
+                const snapshotResponse = await fetch(`/api/rooms/${currentRoomId}`);
+                if (snapshotResponse.ok) {
+                    const snapshotData = await snapshotResponse.json();
+
+                    players.clear();
+                    if (snapshotData.players && Array.isArray(snapshotData.players)) {
+                        snapshotData.players.forEach(player => {
+                            players.set(player.id, player);
+                        });
+                        updatePlayersList();
+
+                        // Check if game can start
+                        const canStart = players.size >= 2;
+                        const startButton = document.getElementById('start-game');
+                        if (startButton) {
+                            startButton.style.display = canStart ? 'block' : 'none';
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching room info:', error);
             }
+
+            // Then update game state
+            try {
+                const response = await fetch(`/api/rooms/${currentRoomId}/state?lastUpdate=${lastUpdate}&userId=${userId}`);
+                if (response.ok) {
+                    const gameState = await response.json();
+
+                    // Update game info
+                    document.getElementById('current-game-name').textContent = 'Game: ' + currentRoomId;
+                    document.getElementById('round-info').textContent = `Round: ${gameState.currentRound}/${gameState.totalRounds}`;
+
+                    // Update scores if available
+                    if (gameState.scores) {
+                        updateScoresList(gameState.scores);
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching game state:', error);
+            }
+
+        } catch (error) {
+            console.error('Error in polling loop:', error);
         }
-    });
-
-    // Handle game state changes
-    client.on('dataEdited', (event) => {
-        if (event.dataEdited?.dataId === 'new_round') {
-            const roundData = JSON.parse(event.dataEdited.dataValue?.stringValue || '{}');
-            handleNewRound(roundData);
-        } else if (event.dataEdited?.dataId === 'guessing_phase') {
-            handleGuessingPhase();
-        } else if (event.dataEdited?.dataId === 'round_over') {
-            const results = JSON.parse(event.dataEdited.dataValue?.stringValue || '{}');
-            handleRoundOver(results);
-        } else if (event.dataEdited?.dataId === 'game_over') {
-            const finalResults = JSON.parse(event.dataEdited.dataValue?.stringValue || '{}');
-            handleGameOver(finalResults);
-        }
-    });
-
-    // Handle room snapshot
-    client.on('fullRoom', (event) => {
-        if (event.fullRoom) {
-            document.getElementById('current-game-name').textContent =
-                'Game: ' + (event.fullRoom.roomOptions?.name || currentRoomId);
-
-            // Update players list
-            players.clear();
-            scores.clear();
-            event.fullRoom.users.forEach(user => {
-                players.set(user.id, user);
-                scores.set(user.id, 0); // Initialize scores
-            });
-            updatePlayersList();
-            checkCanStartGame();
-        }
-    });
-
-    // Handle errors
-    client.on('error', (error) => {
-        console.error('RoomService error:', error);
-        showNotification('Connection error: ' + error.message);
-    });
+    }, 2000); // Changed to 2 seconds to reduce server load
 }
 
 // Handle new round
@@ -290,8 +351,10 @@ function handleNewRound(roundData) {
     gamePhase = 'drawing';
     myRole = roundData.drawer === userId ? 'drawer' : 'guesser';
 
+    console.log(`New round: ${roundData.round}, My role: ${myRole}, Word: ${roundData.word}`);
+
     // Update UI
-    document.getElementById('round-info').textContent = `Round: ${roundData.round}/${5}`; // TODO: Get total rounds
+    document.getElementById('round-info').textContent = `Round: ${roundData.round}/${roundData.totalRounds}`;
     updateTimer(roundData.endTime);
 
     if (myRole === 'drawer') {
@@ -299,12 +362,20 @@ function handleNewRound(roundData) {
         document.getElementById('current-word').textContent = currentWord;
         showGamePhase('drawing-phase');
         document.getElementById('role-display').textContent = '🎨 You are DRAWING!';
+        // Clear drawing canvas
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
     } else {
         showGamePhase('guessing-phase');
         document.getElementById('role-display').textContent = '🤔 Try to guess what\'s being drawn!';
         // Clear viewer canvas
         viewerCtx.fillStyle = 'white';
         viewerCtx.fillRect(0, 0, viewerCanvas.width, viewerCanvas.height);
+        // Disable guess input until guessing phase starts
+        const guessInput = document.getElementById('guess-input');
+        const submitButton = document.getElementById('submit-guess');
+        if (guessInput) guessInput.disabled = true;
+        if (submitButton) submitButton.disabled = true;
     }
 }
 
@@ -313,6 +384,11 @@ function handleGuessingPhase() {
     gamePhase = 'guessing';
     if (myRole === 'guesser') {
         document.getElementById('role-display').textContent = '🎯 Make your guess!';
+        // Enable guess input
+        const guessInput = document.getElementById('guess-input');
+        const submitButton = document.getElementById('submit-guess');
+        if (guessInput) guessInput.disabled = false;
+        if (submitButton) submitButton.disabled = false;
     }
 }
 
@@ -430,6 +506,18 @@ function updateTimer(endTime) {
     }, 1000);
 }
 
+// Helper function to get correct canvas coordinates
+function getCanvasCoordinates(e, canvasElement) {
+    const rect = canvasElement.getBoundingClientRect();
+    const scaleX = canvasElement.width / rect.width;
+    const scaleY = canvasElement.height / rect.height;
+
+    return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
+    };
+}
+
 // Drawing functions (same as pixel battle with batching)
 function drawOnCanvas(data, context = ctx) {
     context.beginPath();
@@ -443,7 +531,7 @@ function drawOnCanvas(data, context = ctx) {
 }
 
 async function sendDrawData(fromX, fromY, toX, toY) {
-    if (!client || !currentRoomId || gamePhase !== 'drawing' || myRole !== 'drawer') return;
+    if (!socket || !currentRoomId || gamePhase !== 'drawing' || myRole !== 'drawer') return;
 
     drawQueue.push({
         color: colorPicker.value,
@@ -470,23 +558,29 @@ async function sendBatchedDrawData() {
     drawQueue = [];
 
     try {
-        await client.setData(currentRoomId, userId, 'canvas_draw_batch', {
-            stringValue: JSON.stringify({
-                timestamp: Date.now(),
-                lines: batch
-            })
+        // Send each drawing command via Socket.io for real-time broadcasting
+        batch.forEach(line => {
+            socket.emit('draw-line', {
+                roomId: currentRoomId,
+                line: line
+            });
         });
     } catch (error) {
-        console.error('Error sending batched draw data:', error);
+        console.error('Error sending drawing data:', error);
     }
 }
 
 // Submit guess
 async function submitGuess() {
     const guessInput = document.getElementById('guess-input');
+    const submitButton = document.getElementById('submit-guess');
     const guess = guessInput.value.trim();
 
     if (!guess || !currentRoomId) return;
+
+    // Disable input while submitting
+    guessInput.disabled = true;
+    submitButton.disabled = true;
 
     try {
         const response = await fetch(`/api/rooms/${currentRoomId}/guess`, {
@@ -500,14 +594,39 @@ async function submitGuess() {
         if (result.correct) {
             showNotification(`🎉 Correct! +${result.score} points!`);
             guessInput.value = '';
-            guessInput.disabled = true;
+            // Keep disabled after correct guess
+            addGuessToList(userId, guess, true);
+
+            // Broadcast correct guess to other players via Socket.io
+            socket.emit('player-guess', {
+                roomId: currentRoomId,
+                userId: userId,
+                guess: guess,
+                isCorrect: true
+            });
         } else {
             showNotification('❌ Wrong guess, try again!');
             addGuessToList(userId, guess, false);
+
+            // Re-enable input for wrong guesses
+            guessInput.disabled = false;
+            submitButton.disabled = false;
+            guessInput.focus();
+
+            // Broadcast wrong guess to other players via Socket.io
+            socket.emit('player-guess', {
+                roomId: currentRoomId,
+                userId: userId,
+                guess: guess,
+                isCorrect: false
+            });
         }
     } catch (error) {
         console.error('Error submitting guess:', error);
         showNotification('Error submitting guess');
+        // Re-enable on error
+        guessInput.disabled = false;
+        submitButton.disabled = false;
     }
 }
 
@@ -527,23 +646,26 @@ function addGuessToList(userId, guess, isCorrect) {
 canvas.addEventListener('mousedown', (e) => {
     if (gamePhase !== 'drawing' || myRole !== 'drawer') return;
     isDrawing = true;
-    [lastX, lastY] = [e.offsetX, e.offsetY];
+    const coords = getCanvasCoordinates(e, canvas);
+    [lastX, lastY] = [coords.x, coords.y];
 });
 
 canvas.addEventListener('mousemove', (e) => {
     if (!isDrawing || gamePhase !== 'drawing' || myRole !== 'drawer') return;
+
+    const coords = getCanvasCoordinates(e, canvas);
 
     drawOnCanvas({
         color: colorPicker.value,
         size: brushSize.value,
         fromX: lastX,
         fromY: lastY,
-        toX: e.offsetX,
-        toY: e.offsetY
+        toX: coords.x,
+        toY: coords.y
     });
 
-    sendDrawData(lastX, lastY, e.offsetX, e.offsetY);
-    [lastX, lastY] = [e.offsetX, e.offsetY];
+    sendDrawData(lastX, lastY, coords.x, coords.y);
+    [lastX, lastY] = [coords.x, coords.y];
 });
 
 canvas.addEventListener('mouseup', () => isDrawing = false);
@@ -553,6 +675,11 @@ canvas.addEventListener('mouseout', () => isDrawing = false);
 function clearCanvas() {
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Broadcast canvas clear via Socket.io
+    if (currentRoomId && socket) {
+        socket.emit('clear-canvas', currentRoomId);
+    }
 }
 
 // Event listeners

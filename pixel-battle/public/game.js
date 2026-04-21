@@ -1,7 +1,7 @@
 // Game state
 let currentRoomId = null;
 let userId = null;
-let client = null;
+let socket = null; // Socket.io connection
 let isDrawing = false;
 let lastX = 0;
 let lastY = 0;
@@ -22,6 +22,25 @@ function getUserId() {
 
 // Initialize user ID
 userId = getUserId();
+
+// Initialize Socket.io connection
+socket = io();
+
+// Socket.io event handlers
+socket.on('connect', () => {
+    console.log('Connected to WebSocket server');
+});
+
+socket.on('draw-line', (line) => {
+    // Draw line from another player
+    drawOnCanvas(line);
+});
+
+socket.on('clear-canvas', () => {
+    // Clear canvas when another player clears it
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+});
 
 // DOM elements
 const canvas = document.getElementById('game-canvas');
@@ -102,6 +121,8 @@ async function createRoom() {
         if (data.room) {
             document.getElementById('room-id').value = data.room.roomId;
             showNotification('Room created! Join to start playing.');
+            // Refresh room list to show the newly created room
+            await loadRooms();
         }
     } catch (error) {
         console.error('Error creating room:', error);
@@ -120,36 +141,54 @@ async function joinRoom() {
     }
 
     try {
-        // Import RoomService dynamically
-        const { RoomServiceClient } = await import('@chempik1234/room-service-js');
-
-        // Initialize client
-        client = new RoomServiceClient({
-            host: window.location.hostname,
-            port: parseInt(window.location.port) || 3001,
-            apiKey: '123' // Should match server
-        });
-
-        // Connect to room
-        await client.connect();
-        currentRoomId = roomId;
-
-        // Join the room with user info (allowing rejoin with same user ID)
-        await client.joinRoom(roomId, {
-            userId: userId,
-            name: playerName,
-            metadata: {
+        // Join room via HTTP API
+        const response = await fetch(`/api/rooms/${roomId}/join`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                playerName: playerName,
+                userId: userId,
                 color: colorPicker.value,
                 brushSize: brushSize.value
-            }
+            })
         });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to join room');
+        }
+
+        const data = await response.json();
+        currentRoomId = roomId;
+
+        // Join Socket.io room for real-time updates
+        socket.emit('join-room', roomId);
+
+        // Clear canvas
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Load existing drawings from the room (one-time load)
+        try {
+            const drawingsResponse = await fetch(`/api/rooms/${roomId}/drawings`);
+            const drawingsData = await drawingsResponse.json();
+
+            if (drawingsData.lines && Array.isArray(drawingsData.lines)) {
+                // Draw existing lines
+                drawingsData.lines.forEach(line => {
+                    drawOnCanvas(line);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading existing drawings:', error);
+        }
 
         // Switch to game view
         document.getElementById('lobby-section').style.display = 'none';
         document.getElementById('game-section').style.display = 'block';
 
-        // Setup event handlers
-        setupGameEvents(client);
+        // Setup game events
+        setupGameEvents();
 
         showNotification('Joined room successfully!');
     } catch (error) {
@@ -160,15 +199,26 @@ async function joinRoom() {
 
 // Leave room properly
 async function leaveRoom() {
-    if (client && currentRoomId) {
+    if (currentRoomId) {
         try {
-            // Send leave command
-            await client.leaveRoom(currentRoomId, userId);
-            await client.close();
+            // Send leave command via HTTP API
+            await fetch('/api/leave', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    roomId: currentRoomId,
+                    userId: userId
+                })
+            });
 
             // Reset state
             currentRoomId = null;
             players.clear();
+
+            // Leave Socket.io room
+            if (socket && currentRoomId) {
+                socket.emit('leave-room', currentRoomId);
+            }
 
             // Switch back to lobby
             document.getElementById('game-section').style.display = 'none';
@@ -186,72 +236,36 @@ async function leaveRoom() {
     }
 }
 
-// Setup game event handlers
-function setupGameEvents(client) {
-    // Handle room events
-    client.on('joinedRoom', (event) => {
-        if (event.joinedRoom?.userFull) {
-            const user = event.joinedRoom.userFull;
-            players.set(user.id, user);
-            updatePlayersList();
-        }
-    });
+// Setup game event handlers with WebSockets
+function setupGameEvents() {
+    let lastUpdate = Date.now();
 
-    client.on('leftRoom', (event) => {
-        if (event.leftRoom?.kickedUserId) {
-            const kickedUserId = event.leftRoom.kickedUserId;
+    // Poll for room updates every 1 second (players list, room info)
+    setInterval(async () => {
+        if (!currentRoomId) return;
 
-            // Check if we were kicked
-            if (kickedUserId === userId) {
-                showNotification('You were kicked from the room!', 5000);
-                setTimeout(() => {
-                    location.reload();
-                }, 2000);
-                return;
+        try {
+            const response = await fetch(`/api/rooms/${currentRoomId}/updates?lastUpdate=${lastUpdate}`);
+            const data = await response.json();
+
+            if (data.hasUpdates) {
+                lastUpdate = data.timestamp;
+
+                // Update players list
+                players.clear();
+                data.players.forEach(player => {
+                    players.set(player.id, player);
+                });
+                updatePlayersList();
+
+                // Update room info
+                document.getElementById('current-room-name').textContent = 'Room: ' + currentRoomId;
+                document.getElementById('player-count').textContent = 'Players: ' + data.currentPlayers;
             }
-
-            players.delete(kickedUserId);
-            updatePlayersList();
-            showNotification('Player left the room');
+        } catch (error) {
+            console.error('Error polling for updates:', error);
         }
-    });
-
-    client.on('dataEdited', (event) => {
-        if (event.dataEdited?.dataId === 'canvas_draw') {
-            // Handle single drawing data (legacy format)
-            const drawData = JSON.parse(event.dataEdited.dataValue?.stringValue || '{}');
-            drawOnCanvas(drawData);
-        } else if (event.dataEdited?.dataId === 'canvas_draw_batch') {
-            // Handle batched drawing data (new optimized format)
-            const batchData = JSON.parse(event.dataEdited.dataValue?.stringValue || '{}');
-            if (batchData.lines && Array.isArray(batchData.lines)) {
-                batchData.lines.forEach(line => drawOnCanvas(line));
-            }
-        }
-    });
-
-    client.on('fullRoom', (event) => {
-        if (event.fullRoom) {
-            // Update room info
-            document.getElementById('current-room-name').textContent =
-                'Room: ' + (event.fullRoom.roomOptions?.name || currentRoomId);
-            document.getElementById('player-count').textContent =
-                'Players: ' + event.fullRoom.users.length;
-
-            // Update players list
-            players.clear();
-            event.fullRoom.users.forEach(user => {
-                players.set(user.id, user);
-            });
-            updatePlayersList();
-        }
-    });
-
-    // Handle errors
-    client.on('error', (error) => {
-        console.error('RoomService error:', error);
-        showNotification('Connection error: ' + error.message);
-    });
+    }, 1000);
 }
 
 // Update players list
@@ -324,7 +338,7 @@ function drawOnCanvas(data) {
 
 // Batched drawing updates for better performance
 async function sendDrawData(fromX, fromY, toX, toY) {
-    if (!client || !currentRoomId) return;
+    if (!currentRoomId) return;
 
     // Add to batch queue
     drawQueue.push({
@@ -342,7 +356,7 @@ async function sendDrawData(fromX, fromY, toX, toY) {
     }
 }
 
-// Send batched draw data
+// Send batched draw data via WebSocket
 async function sendBatchedDrawData() {
     if (drawQueue.length === 0) {
         clearInterval(batchInterval);
@@ -355,27 +369,41 @@ async function sendBatchedDrawData() {
     drawQueue = [];
 
     try {
-        // Send batched draw data
-        await client.setData(currentRoomId, userId, 'canvas_draw_batch', {
-            stringValue: JSON.stringify({
-                timestamp: Date.now(),
-                lines: batch
-            }
-        )});
+        // Send each drawing command via WebSocket for real-time broadcasting
+        batch.forEach(line => {
+            socket.emit('draw-line', {
+                roomId: currentRoomId,
+                line: line
+            });
+        });
     } catch (error) {
-        console.error('Error sending batched draw data:', error);
+        console.error('Error sending drawing data:', error);
     }
+}
+
+// Helper function to get correct canvas coordinates
+function getCanvasCoordinates(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
+    };
 }
 
 // Canvas event listeners
 canvas.addEventListener('mousedown', (e) => {
     isDrawing = true;
-    [lastX, lastY] = [e.offsetX, e.offsetY];
+    const coords = getCanvasCoordinates(e);
+    [lastX, lastY] = [coords.x, coords.y];
 });
 
 canvas.addEventListener('mousemove', (e) => {
-    mouseX.textContent = e.offsetX;
-    mouseY.textContent = e.offsetY;
+    const coords = getCanvasCoordinates(e);
+    mouseX.textContent = Math.round(coords.x);
+    mouseY.textContent = Math.round(coords.y);
 
     if (!isDrawing) return;
 
@@ -384,12 +412,12 @@ canvas.addEventListener('mousemove', (e) => {
         size: brushSize.value,
         fromX: lastX,
         fromY: lastY,
-        toX: e.offsetX,
-        toY: e.offsetY
+        toX: coords.x,
+        toY: coords.y
     });
 
-    sendDrawData(lastX, lastY, e.offsetX, e.offsetY);
-    [lastX, lastY] = [e.offsetX, e.offsetY];
+    sendDrawData(lastX, lastY, coords.x, coords.y);
+    [lastX, lastY] = [coords.x, coords.y];
 });
 
 canvas.addEventListener('mouseup', () => isDrawing = false);
@@ -400,11 +428,10 @@ async function clearCanvas() {
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    if (client && currentRoomId) {
+    if (currentRoomId && socket) {
         try {
-            await client.sendData(currentRoomId, 'canvas_clear', {
-                stringValue: 'clear'
-            });
+            // Broadcast canvas clear via WebSocket
+            socket.emit('clear-canvas', currentRoomId);
         } catch (error) {
             console.error('Error clearing canvas:', error);
         }
@@ -420,7 +447,7 @@ document.getElementById('refresh-rooms').addEventListener('click', loadRooms);
 
 // Handle browser close/tab close - proper cleanup
 window.addEventListener('beforeunload', (e) => {
-    if (client && currentRoomId) {
+    if (currentRoomId) {
         // Send leave command synchronously
         navigator.sendBeacon('/api/leave', JSON.stringify({
             roomId: currentRoomId,
@@ -436,10 +463,10 @@ window.addEventListener('beforeunload', (e) => {
 
 // Handle page visibility changes (tab switching)
 document.addEventListener('visibilitychange', () => {
-    if (document.hidden && client && currentRoomId) {
-        console.log('Page hidden - connection maintained');
-    } else if (!document.hidden && client && currentRoomId) {
-        console.log('Page visible - connection active');
+    if (document.hidden && currentRoomId) {
+        console.log('Page hidden - polling continues');
+    } else if (!document.hidden && currentRoomId) {
+        console.log('Page visible - polling active');
     }
 });
 

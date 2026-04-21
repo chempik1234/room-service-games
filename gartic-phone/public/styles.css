@@ -172,6 +172,39 @@ input {
     width: auto;
 }
 
+/* Color picker styling */
+input[type="color"] {
+    width: 50px;
+    height: 40px;
+    padding: 0;
+    border: 2px solid #ddd;
+    border-radius: 5px;
+    cursor: pointer;
+    background: none;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch {
+    border: none;
+    border-radius: 3px;
+}
+
+input[type="color"]::-moz-color-swatch {
+    border: none;
+    border-radius: 3px;
+}
+
+/* Range slider styling */
+input[type="range"] {
+    width: 100px;
+    height: 8px;
+    padding: 0;
+    margin: 0;
+}
+
 #game-section {
     padding: 20px;
 }
@@ -311,6 +344,13 @@ input {
 
 #guess-input {
     flex: 1;
+    min-width: 0; /* Prevents text input from shrinking */
+}
+
+.guess-input-area .btn {
+    width: auto; /* Override default 100% width */
+    white-space: nowrap; /* Prevent button text from wrapping */
+    padding: 12px 20px; /* Fixed padding instead of 100% width */
 }
 
 .guesses-chat {

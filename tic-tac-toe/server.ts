@@ -26,8 +26,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Initialize RoomService client
 const roomServiceClient = new RoomServiceClient({
-  host: process.env.ROOM_SERVICE_HOST || 'https://roomservice-proxy-production.up.railway.app:50051',
-  apiKey: process.env.ROOM_SERVICE_API_KEY || 'rs_live_tenant-dabusick-addaa112_72c81ea6-a72a-4577-8763-c6522fa8afd7'
+  host: process.env.ROOM_SERVICE_HOST || 'http://localhost:50050',
+  apiKey: process.env.ROOM_SERVICE_API_KEY || '123'
 });
 
 // API: Create a new game room
@@ -301,9 +301,9 @@ function checkWin(board: string[]): string | null {
 }
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`🎮 Tic-Tac-Toe demo server running at http://localhost:${PORT}`);
-  console.log(`📡 RoomService at: ${process.env.ROOM_SERVICE_HOST || 'localhost:50050'}`);
+app.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`🎮 Tic-Tac-Toe demo server running at http://0.0.0.0:${PORT}`);
+  console.log(`📡 RoomService at: ${process.env.ROOM_SERVICE_HOST || 'unknown!!!'}`);
 });
 
 // Graceful shutdown

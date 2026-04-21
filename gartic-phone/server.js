@@ -1,10 +1,14 @@
 import express from 'express';
+import { createServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 import { RoomServiceClient } from '@chempik1234/room-service-js';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 const app = express();
+const server = createServer(app);
+const io = new SocketIOServer(server);
 const PORT = process.env.PORT || 3002;
 
 // Game word list for drawing
@@ -22,9 +26,9 @@ const games = new Map(); // roomId -> game state
 
 // Initialize RoomService client
 const client = new RoomServiceClient({
-  host: process.env.ROOMSERVICE_HOST?.split(':')[0] || 'localhost',
-  port: parseInt(process.env.ROOMSERVICE_HOST?.split(':')[1] || '50050'),
-  apiKey: process.env.ROOMSERVICE_API_KEY || '123'
+  host: process.env.ROOM_SERVICE_HOST?.split(':')[0] || 'localhost',
+  port: parseInt(process.env.ROOM_SERVICE_HOST?.split(':')[1] || '50050'),
+  apiKey: process.env.ROOM_SERVICE_API_KEY || '123'
 });
 
 app.use(express.json());
@@ -85,20 +89,149 @@ app.get('/api/word', (req, res) => {
   res.json({ word: WORD_LIST[randomIndex] });
 });
 
+// Join room endpoint
+app.post('/api/rooms/:roomId/join', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { playerName, userId, color, brushSize } = req.body;
+
+    await client.joinRoom(roomId, {
+      userId: userId,
+      userName: playerName,
+      metadata: {
+        color: color || '#000000',
+        brushSize: brushSize || '5'
+      }
+    });
+
+    // Get room snapshot to return current state
+    const snapshot = await client.getRoomSnapshot(roomId);
+
+    res.json({
+      success: true,
+      roomId: roomId,
+      snapshot: {
+        currentPlayers: snapshot.users.length,
+        maxPlayers: parseInt(snapshot.roomOptions?.max_size || '5')
+      }
+    });
+  } catch (error) {
+    console.error('Error joining room:', error);
+    res.status(500).json({ error: 'Failed to join room' });
+  }
+});
+
+// Leave room endpoint
+app.post('/api/leave', async (req, res) => {
+  try {
+    const { roomId, userId } = req.body;
+
+    if (client && roomId && userId) {
+      await client.leaveRoom(roomId, userId);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error leaving room:', error);
+    res.status(500).json({ error: 'Failed to leave room' });
+  }
+});
+
+// Get room info for game state
+app.get('/api/rooms/:roomId', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const snapshot = await client.getRoomSnapshot(roomId);
+
+    // Prepare game-friendly data
+    const gameData = {
+      roomId: snapshot.roomId,
+      roomOptions: snapshot.roomOptions,
+      currentPlayers: snapshot.users.length,
+      maxPlayers: parseInt(snapshot.roomOptions?.max_size || '5'),
+      players: snapshot.users.map(user => ({
+        id: user.id,
+        name: user.name,
+        color: user.metadata?.color || '#000000',
+        brushSize: user.metadata?.brushSize || '5'
+      }))
+    };
+
+    res.json(gameData);
+  } catch (error) {
+    console.error('Error getting room info:', error);
+    res.status(500).json({ error: 'Failed to get room info' });
+  }
+});
+
+// Get game state for polling
+app.get('/api/rooms/:roomId/state', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { lastUpdate, userId } = req.query;
+
+    let gameState = games.get(roomId);
+
+    // Auto-initialize game state if room exists but no game state
+    if (!gameState) {
+      try {
+        const snapshot = await client.getRoomSnapshot(roomId);
+        if (snapshot && snapshot.roomOptions?.game_type === 'gartic_phone') {
+          // Initialize game state for existing room
+          games.set(roomId, {
+            status: 'waiting',
+            currentRound: 0,
+            totalRounds: parseInt(snapshot.roomOptions?.total_rounds || '5'),
+            roundTime: parseInt(snapshot.roomOptions?.round_time || '180'),
+            players: new Map(),
+            scores: new Map(),
+            currentDrawer: null,
+            currentWord: null,
+            roundStartTime: null,
+            roundEndTime: null,
+            guesses: new Map(),
+            drawerHistory: []
+          });
+          gameState = games.get(roomId);
+          console.log(`Auto-initialized game state for room ${roomId}`);
+        } else {
+          return res.status(404).json({ error: 'Room not found or not a Gartic Phone room' });
+        }
+      } catch (error) {
+        return res.status(404).json({ error: 'Room not found' });
+      }
+    }
+
+    // Prepare safe state for client
+    const safeState = {
+      status: gameState.status,
+      currentRound: gameState.currentRound,
+      totalRounds: gameState.totalRounds,
+      roundTimeLeft: gameState.roundEndTime ? Math.max(0, Math.ceil((gameState.roundEndTime - Date.now()) / 1000)) : 0,
+      currentDrawer: gameState.currentDrawer,
+      scores: Object.fromEntries(gameState.scores),
+      hasGuessed: userId ? gameState.guesses.has(userId) : false
+    };
+
+    res.json(safeState);
+  } catch (error) {
+    console.error('Error getting game state:', error);
+    res.status(500).json({ error: 'Failed to get game state' });
+  }
+});
+
 // Create new Gartic Phone room
 app.post('/api/rooms', async (req, res) => {
   try {
     const { roomName, totalRounds = 5, roundTime = 180 } = req.body; // 3 minutes default
 
     const room = await client.createRoom({
-      roomOptions: {
-        name: roomName || `Gartic Phone ${Date.now()}`,
-        game_type: 'gartic_phone',
-        max_size: '5', // Max 5 players
-        total_rounds: totalRounds.toString(),
-        round_time: roundTime.toString(),
-        created_at: Date.now().toString()
-      }
+      name: roomName || `Gartic Phone ${Date.now()}`,
+      game_type: 'gartic_phone',
+      max_size: '5', // Max 5 players
+      total_rounds: totalRounds.toString(),
+      round_time: roundTime.toString(),
+      created_at: Date.now().toString()
     });
 
     // Initialize game state
@@ -130,9 +263,36 @@ app.post('/api/rooms/:roomId/start', async (req, res) => {
     const { roomId } = req.params;
     const { starterUserId } = req.body;
 
-    const gameState = games.get(roomId);
+    let gameState = games.get(roomId);
+
+    // Auto-initialize game state if room exists but no game state
     if (!gameState) {
-      return res.status(404).json({ error: 'Game not found' });
+      try {
+        const snapshot = await client.getRoomSnapshot(roomId);
+        if (snapshot && snapshot.roomOptions?.game_type === 'gartic_phone') {
+          // Initialize game state for existing room
+          games.set(roomId, {
+            status: 'waiting',
+            currentRound: 0,
+            totalRounds: parseInt(snapshot.roomOptions?.total_rounds || '5'),
+            roundTime: parseInt(snapshot.roomOptions?.round_time || '180'),
+            players: new Map(),
+            scores: new Map(),
+            currentDrawer: null,
+            currentWord: null,
+            roundStartTime: null,
+            roundEndTime: null,
+            guesses: new Map(),
+            drawerHistory: []
+          });
+          gameState = games.get(roomId);
+          console.log(`Auto-initialized game state for room ${roomId}`);
+        } else {
+          return res.status(404).json({ error: 'Room not found or not a Gartic Phone room' });
+        }
+      } catch (error) {
+        return res.status(404).json({ error: 'Room not found' });
+      }
     }
 
     if (gameState.status !== 'waiting') {
@@ -211,34 +371,6 @@ app.post('/api/rooms/:roomId/guess', async (req, res) => {
   }
 });
 
-// Get game state
-app.get('/api/rooms/:roomId/state', async (req, res) => {
-  try {
-    const { roomId } = req.params;
-    const gameState = games.get(roomId);
-
-    if (!gameState) {
-      return res.status(404).json({ error: 'Game not found' });
-    }
-
-    // Prepare safe state for client
-    const safeState = {
-      status: gameState.status,
-      currentRound: gameState.currentRound,
-      totalRounds: gameState.totalRounds,
-      roundTimeLeft: gameState.roundEndTime ? Math.max(0, Math.ceil((gameState.roundEndTime - Date.now()) / 1000)) : 0,
-      currentDrawer: gameState.currentDrawer,
-      scores: Object.fromEntries(gameState.scores),
-      hasGuessed: gameState.guesses.has(req.query.userId)
-    };
-
-    res.json(safeState);
-  } catch (error) {
-    console.error('Error getting game state:', error);
-    res.status(500).json({ error: 'Failed to get game state' });
-  }
-});
-
 // Helper function to start a new round
 async function startNewRound(roomId, gameState) {
   gameState.currentRound++;
@@ -270,15 +402,14 @@ async function startNewRound(roomId, gameState) {
   gameState.roundStartTime = Date.now();
   gameState.roundEndTime = Date.now() + (gameState.roundTime * 1000);
 
-  // Notify room
-  await client.setData(roomId, 'system', 'new_round', {
-    stringValue: JSON.stringify({
-      round: gameState.currentRound,
-      drawer: drawer.id,
-      drawerName: drawer.name,
-      word: gameState.currentWord,
-      endTime: gameState.roundEndTime
-    })
+  // Notify room via WebSocket
+  io.to(roomId).emit('new-round', {
+    round: gameState.currentRound,
+    drawer: drawer.id,
+    drawerName: drawer.name,
+    word: gameState.currentWord,
+    endTime: gameState.roundEndTime,
+    totalRounds: gameState.totalRounds
   });
 
   // Auto-transition to guessing phase after 30 seconds
@@ -293,15 +424,10 @@ async function startNewRound(roomId, gameState) {
 async function startGuessingPhase(roomId, gameState) {
   gameState.status = 'guessing';
 
-  // Clear canvas data (hide the word)
-  await client.deleteData(roomId, 'system', 'current_word');
-
-  // Notify room
-  await client.setData(roomId, 'system', 'guessing_phase', {
-    stringValue: JSON.stringify({
-      startTime: Date.now(),
-      endTime: gameState.roundEndTime
-    })
+  // Notify room via WebSocket
+  io.to(roomId).emit('guessing-phase', {
+    startTime: Date.now(),
+    endTime: gameState.roundEndTime
   });
 }
 
@@ -309,14 +435,12 @@ async function startGuessingPhase(roomId, gameState) {
 async function endRound(roomId, gameState) {
   gameState.status = 'round_over';
 
-  // Notify room of round results
-  await client.setData(roomId, 'system', 'round_over', {
-    stringValue: JSON.stringify({
-      round: gameState.currentRound,
-      word: gameState.currentWord,
-      scores: Object.fromEntries(gameState.scores),
-      guesses: Array.from(gameState.guesses.entries())
-    })
+  // Notify room of round results via WebSocket
+  io.to(roomId).emit('round-over', {
+    round: gameState.currentRound,
+    word: gameState.currentWord,
+    scores: Object.fromEntries(gameState.scores),
+    guesses: Array.from(gameState.guesses.entries())
   });
 
   // Wait a bit then start next round or end game
@@ -333,12 +457,10 @@ async function endRound(roomId, gameState) {
 async function endGame(roomId, gameState) {
   gameState.status = 'finished';
 
-  // Notify room of final results
-  await client.setData(roomId, 'system', 'game_over', {
-    stringValue: JSON.stringify({
-      finalScores: Object.fromEntries(gameState.scores),
-      winner: Array.from(gameState.scores.entries()).sort((a, b) => b[1] - a[1])[0]
-    })
+  // Notify room of final results via WebSocket
+  io.to(roomId).emit('game-over', {
+    finalScores: Object.fromEntries(gameState.scores),
+    winner: Array.from(gameState.scores.entries()).sort((a, b) => b[1] - a[1])[0]
   });
 
   // Reset game after 10 seconds
@@ -354,11 +476,64 @@ async function endGame(roomId, gameState) {
   }, 10000);
 }
 
+// Socket.io real-time events
+io.on('connection', (socket) => {
+  console.log('Client connected:', socket.id);
+
+  // Join game room
+  socket.on('join-game', (roomId) => {
+    socket.join(roomId);
+    console.log(`Socket ${socket.id} joined game ${roomId}`);
+  });
+
+  // Leave game room
+  socket.on('leave-room', (roomId) => {
+    socket.leave(roomId);
+    console.log(`Socket ${socket.id} left game ${roomId}`);
+  });
+
+  // Handle drawing commands (real-time broadcasting)
+  socket.on('draw-line', (data) => {
+    const { roomId, line } = data;
+    // Broadcast to all clients in the room except sender
+    socket.to(roomId).emit('draw-line', line);
+    console.log(`Drawing line in game ${roomId}`);
+  });
+
+  // Handle canvas clear
+  socket.on('clear-canvas', (roomId) => {
+    socket.to(roomId).emit('clear-canvas');
+    console.log(`Canvas cleared in game ${roomId}`);
+  });
+
+  // Handle guess submissions (real-time broadcasting)
+  socket.on('player-guess', (data) => {
+    const { roomId, userId, guess, isCorrect } = data;
+    // Broadcast guess to all clients in room except sender
+    socket.to(roomId).emit('player-guess', { userId, guess, isCorrect });
+    console.log(`Player ${userId} guessed "${guess}" in game ${roomId} - ${isCorrect ? 'CORRECT!' : 'wrong'}`);
+  });
+
+  // Handle game state updates
+  socket.on('game-state-update', (data) => {
+    const { roomId, gameState } = data;
+    // Broadcast game state to all clients in room
+    socket.to(roomId).emit('game-state-update', gameState);
+    console.log(`Game state update in ${roomId}: ${gameState}`);
+  });
+
+  // Handle disconnect
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+  });
+});
+
 // Cleanup
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Gartic Phone server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`RoomService: ${process.env.ROOMSERVICE_HOST || 'localhost:50050'}`);
+  console.log(`RoomService: ${process.env.ROOM_SERVICE_HOST || 'localhost:50050'}`);
+  console.log(`WebSocket: Real-time drawing and guessing enabled! 🎨`);
 });
 
 // Graceful shutdown

@@ -1,0 +1,210 @@
+syntax = "proto3";
+
+option go_package = "pkg/api/room_service";
+
+package api;
+
+// --------------------- universal types
+message EmptyMessage {}
+
+message ErrorMessage {
+  string error = 1;
+}
+
+enum DateEditMode {
+  SET = 0;
+  DELETE = 1;
+  APPEND = 2;  // for list
+  REMOVE = 3;  // for map, list
+}
+
+message Value {
+  oneof value {
+    string string_value = 1;
+    int64 int_value = 2;
+    double float_value = 3;
+    bool bool_value = 4;
+    bytes binary_value = 5;
+    ListValue list_value = 6;
+    MapValue map_value = 7;
+  }
+}
+
+// custom types for Value
+message ListValue {
+  repeated Value values = 1;
+}
+
+message MapValue {
+  map<string, Value> values = 1;
+}
+
+// --------------------- representative messages
+
+message User {
+  string id = 1;
+  string name = 2;
+  map<string, string> metadata = 3; // what if client wants to store some data e.g. avatar id
+  // int64 joined_at = 4;
+}
+
+message RoomShort {
+  map<string, string> room_options = 1; // game type, max users, any constant metadata
+  string room_id = 2;
+  string room_owner_id = 3;
+}
+
+message RoomData {
+  map<string, Value> values = 1;
+  // users are displayed as list in snapshot, not a field of RoomData
+}
+
+// --------------------- command messages
+
+message Command {
+  string command_id = 1; // no-repeat, but if commandID is empty, no checks are applied
+  int64 timestamp = 2;
+  optional string room_id = 3;
+  string user_id = 4;
+
+  oneof payload {// to send various commands as same type Command we use oneof
+    CreateRoomCommandBody create_room = 10;
+    DeleteRoomCommandBody delete_room = 11;
+
+    JoinRoomCommandBody join_room = 20;
+    LeaveRoomCommandBody leave_room = 21;
+
+    SetAppendDeleteDataCommandBody affect_data = 30;  // create, update, delete
+    SetOwnerUserID set_owner = 31;
+
+    RefreshRoomCommandBody refresh_room = 40;
+  }
+}
+
+// bodies of command: can't be used on their own
+message CreateRoomCommandBody {
+  map<string, string> room_options = 1; // max_users for example
+}
+
+message DeleteRoomCommandBody {
+  bool delete_approve = 1;  // to differ from LeaveRoomCommandBody as it's empty too
+}
+
+message JoinRoomCommandBody {
+  User user_full = 1;
+}
+
+message LeaveRoomCommandBody {
+  string kicked_user_id = 1; // we can kick someone
+}
+
+message SetAppendDeleteDataCommandBody {
+  string data_id = 1;
+  optional Value data_value = 2;  // optional because no need for delete
+  DateEditMode command_mode = 3;
+  optional string item_index = 4; // map key or list index - if used, SET/REMOVE modes affect only ITEM, not WHOLE VALUE
+}
+
+message SetOwnerUserID {
+  string new_owner_id = 1;
+}
+
+message RefreshRoomCommandBody {
+  bool refresh_room = 1;
+}
+
+// --------------------- broadcast event messages (we send deltas to users)
+
+message Event {
+  // string event_id = 1;
+  int64 timestamp = 2;
+  string room_id = 3;
+  string user_id = 4;
+
+  oneof payload {// to send various events as same type Event we use oneof
+    RoomCreatedEventBody room_created = 10;
+    RoomDeletedEventBody room_deleted = 11;
+
+    JoinedRoomEventBody joined_room = 20;
+    LeftRoomEventBody left_room = 21;
+
+    DataEditedEventBody data_edited = 30;
+    OwnerChangedEventBody owner_changed = 31;
+
+    FullRoomSnapshotEventBody full_room = 40;
+
+    ErrorMessage error_message = 50;
+  }
+}
+
+// bodies of event: can't be used on their own
+message RoomCreatedEventBody {// for SDK info, user likely won't see this...
+  map<string, string> room_options = 1; // max_users for example
+  string room_id = 2;
+}
+
+message RoomDeletedEventBody {
+  string deleted_room_id = 2;
+}
+
+message JoinedRoomEventBody {
+  User user_full = 1;
+  string room_id = 2;
+}
+
+message LeftRoomEventBody {
+  string room_id = 3;
+  string kicked_user_id = 2;
+}
+
+// data edited can be created, edited & deleted
+message DataEditedEventBody {
+  string data_id = 1;
+  optional Value data_value = 2;  // no need for delete
+  DateEditMode command_mode = 3;
+  string room_id = 4;
+}
+
+message OwnerChangedEventBody {
+  string new_owner_id = 1;
+  bool owner_has_changed = 2;
+}
+
+message FullRoomSnapshotEventBody {
+  RoomData room = 1;
+  repeated User users = 2;
+
+  map<string, string> room_options = 3; // max_users for example
+  string room_id = 4;
+}
+
+// --------------------- single command result is the same as Event
+
+// --------------------- query input
+
+message UserIDMessage {
+  string user_id = 1;
+}
+
+// --------------------- query results
+
+message RoomsShortList {
+  repeated RoomShort rooms = 1;
+}
+
+// --------------------- service
+
+service RoomService {
+  // main life cycle
+  rpc Stream(stream Command) returns (stream Event);
+  // just for fun
+  rpc SingleCommand(Command) returns (Event);
+
+  // commands region for GET "questions" that only client needs us to answer
+
+  // return rooms with users and options, no inner data
+  rpc RoomsList(EmptyMessage) returns (RoomsShortList);
+  rpc UserActiveRoomsList(UserIDMessage) returns (RoomsShortList);
+
+  // maybe some other operations
+}
