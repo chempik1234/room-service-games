@@ -33,17 +33,27 @@ Drawing and guessing game with scoring system.
 
 ## 🚀 Quick Start
 
-### 🏠 Local Development
+### 🎮 **Start All Games with Makefile**
 ```bash
-# Install dependencies
-npm install
+# Start all games at once on different ports
+make all
 
-# Start a game
-cd pixel-battle    # or gartic-phone, tic-tac-toe
-npm start
+# Or start individual games
+make tic-tac-toe     # Port 3000
+make pixel-battle   # Port 3001
+make gartic-phone   # Port 3002
 ```
 
-### 🚂 Railway Deployment (Recommended)
+**Available Make Commands:**
+- `make all` - Start all games
+- `make stop` - Stop all game servers
+- `make install` - Install dependencies
+- `make status` - Show running games
+- `make help` - Show all commands
+
+📖 **See [SETUP.md](./SETUP.md) for complete command reference**
+
+### 🚂 **Railway Deployment (Recommended)**
 
 **Simple One-Command Deployment:**
 ```bash
@@ -94,8 +104,8 @@ ROOMSERVICE_HOST=localhost:50050
 ROOMSERVICE_API_KEY=123
 
 # Production example:
-# ROOMSERVICE_HOST=roomky.chickenkiller.com:50052
-# ROOMSERVICE_API_KEY=rs_live_tenant-20s-b15968f3_dbb54fa5-e970-4b0e-a044-41313bf79dee
+# ROOMSERVICE_HOST=your-production-host:50052
+# ROOMSERVICE_API_KEY=your-production-api-key-here
 
 # Server Configuration
 PORT=3001

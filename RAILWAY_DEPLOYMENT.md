@@ -85,7 +85,7 @@ Railway will detect the individual game folders. For each game:
 ```bash
 # RoomService Configuration
 ROOMSERVICE_HOST=roomky.chickenkiller.com:50052
-ROOMSERVICE_API_KEY=rs_live_tenant-20s-b15968f3_dbb54fa5-e970-4b0e-a044-41313bf79dee
+ROOMSERVICE_API_KEY=your-production-api-key-here
 
 # Server Configuration
 PORT=3001  # Use 3000, 3001, 3002 for different games
