@@ -33,7 +33,7 @@ Drawing and guessing game with scoring system.
 
 ## 🚀 Quick Start
 
-### Option 1: Using npm (when SDK is published)
+### 🏠 Local Development
 ```bash
 # Install dependencies
 npm install
@@ -43,7 +43,17 @@ cd pixel-battle    # or gartic-phone, tic-tac-toe
 npm start
 ```
 
-### Option 2: Using local SDK (current setup)
+### 🚂 Railway Deployment (Recommended)
+**Deploy all games to Railway with free tier:**
+
+1. **Push to GitHub** and deploy via Railway dashboard
+2. **Automatic deployments** on every push
+3. **Free tier** covers all 3 games
+4. **Real-time connections** work perfectly
+
+📖 **See [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md) for detailed guide**
+
+### 💻 Local SDK Development
 ```bash
 # In the SDK directory
 cd room-service-js
@@ -148,12 +158,31 @@ setInterval(sendBatchedDrawData, 100);
 
 ## 🚢 Deployment
 
-### Environment Setup
+### 🚂 **Railway Deployment (Recommended)**
+
+**Why Railway?**
+- ✅ Full container hosting (not serverless)
+- ✅ Long-running game servers
+- ✅ WebSocket support for real-time multiplayer
+- ✅ Free tier covers all 3 games
+- ✅ Automatic GitHub deployments
+
+**Quick Deploy:**
+1. Push repository to GitHub
+2. Deploy via [railway.app](https://railway.app)
+3. Set environment variables
+4. Games auto-deploy on every push
+
+📖 **Full Guide**: [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md)
+
+### 🏠 **Local Development**
+
+**Environment Setup:**
 1. Copy `.env.example` to `.env`
 2. Update `ROOMSERVICE_HOST` and `ROOMSERVICE_API_KEY`
 3. Set appropriate `PORT` for each game
 
-### Starting Games
+**Starting Games:**
 ```bash
 # Terminal 1: Pixel Battle
 cd pixel-battle && npm start
@@ -165,11 +194,19 @@ cd gartic-phone && npm start
 cd tic-tac-toe && npm start
 ```
 
-### Production Deployment
+### 📦 **Production Deployment**
+
+**Option 1: Railway (Recommended)**
+- Auto-deploys from GitHub
+- Handles SSL certificates
+- Built-in monitoring
+- Free tier available
+
+**Option 2: Traditional Hosting**
 1. Build the SDK: `cd room-service-js && npm run build`
 2. Publish to npm: `npm publish`
 3. Update game dependencies: `npm install @chempik1234/room-service-js@latest`
-4. Deploy game servers
+4. Deploy to any Node.js hosting (DigitalOcean, AWS, etc.)
 
 ## 📚 Documentation
 

@@ -1,0 +1,18 @@
+# Exclude node_modules from deployment (Railway will install dependencies)
+node_modules/
+
+# Exclude development files
+*.md
+.env.example
+.gitignore
+.railwayignore
+
+# Exclude test files
+test/
+*.test.js
+*.spec.js
+
+# Exclude development configs
+nodemon.json
+.eslintrc
+.prettierrc
