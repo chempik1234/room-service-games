@@ -1,0 +1,23 @@
+[build]
+builder = "NIXPACKS"
+
+# Pixel Battle Service
+[[services]]
+name = "pixel-battle"
+source = "pixel-battle"
+start_command = "node server.js"
+healthcheck_path = "/health"
+
+# Gartic Phone Service
+[[services]]
+name = "gartic-phone"
+source = "gartic-phone"
+start_command = "node server.js"
+healthcheck_path = "/health"
+
+# Tic-Tac-Toe Service
+[[services]]
+name = "tic-tac-toe"
+source = "tic-tac-toe"
+start_command = "tsx server.ts"
+healthcheck_path = "/health"

@@ -44,12 +44,24 @@ npm start
 ```
 
 ### 🚂 Railway Deployment (Recommended)
-**Deploy all games to Railway with free tier:**
 
-1. **Push to GitHub** and deploy via Railway dashboard
-2. **Automatic deployments** on every push
-3. **Free tier** covers all 3 games
-4. **Real-time connections** work perfectly
+**Simple One-Command Deployment:**
+```bash
+# Install Railway CLI
+npm install -g @railway/cli
+
+# Login to Railway
+railway login
+
+# Deploy all games with one command!
+railway up
+```
+
+**That's it!** All 3 games deploy automatically with:
+- ✅ Free tier covers all games
+- ✅ Automatic SSL certificates
+- ✅ Real-time connections work perfectly
+- ✅ Auto-deploys on every git push
 
 📖 **See [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md) for detailed guide**
 
