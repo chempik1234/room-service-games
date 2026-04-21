@@ -8,7 +8,11 @@
       "Bash(taskkill:*)",
       "Bash(powershell:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit *)",
+      "Bash(npm search *)",
+      "Bash(npm view *)",
+      "Bash(npm link *)"
     ]
   }
 }
