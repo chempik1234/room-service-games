@@ -1,4 +1,4 @@
-.PHONY: help start stop restart install clean test-all
+.PHONY: help start stop restart install clean
 
 # Default target
 help:
@@ -18,8 +18,8 @@ help:
 	@echo "  make restart        - Restart all game servers"
 	@echo "  make install        - Install dependencies for all games"
 	@echo "  make clean          - Clean node_modules and build files"
-	@echo "  make test           - Test all games"
 	@echo "  make status         - Show running games"
+	@echo "  make health         - Health check all games"
 	@echo ""
 	@echo "Development:"
 	@echo "  make dev            - Start all games in development mode"
@@ -80,22 +80,6 @@ clean:
 	@rm -rf pixel-battle/node_modules
 	@rm -rf gartic-phone/node_modules
 	@echo "✅ Clean completed!"
-
-# Test all games
-test: test-tic-tac-toe test-pixel-battle test-gartic-phone
-	@echo "✅ All games tested!"
-
-test-tic-tac-toe:
-	@echo "🧪 Testing Tic-Tac-Toe..."
-	@cd tic-tac-toe && npm test
-
-test-pixel-battle:
-	@echo "🧪 Testing Pixel Battle..."
-	@cd pixel-battle && npm test
-
-test-gartic-phone:
-	@echo "🧪 Testing Gartic Phone..."
-	@cd gartic-phone && npm test
 
 # Show running games
 status:
