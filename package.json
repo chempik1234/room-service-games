@@ -12,15 +12,16 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "npm run build-proto && npm run build-ts",
+    "build": "npm run build-ts",
     "build-proto": "bash scripts/build-proto.sh",
     "build-ts": "tsc",
+    "build:full": "npm run build-proto && npm run build-ts",
     "build:watch": "tsc --watch",
     "dev": "tsc --watch",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:integration": "jest --config jest.integration.config.js",
-    "prepublishOnly": "npm run build",
+    "prepublishOnly": "npm run build-ts",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "demo:setup": "bash scripts/setup-demo.sh"
