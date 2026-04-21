@@ -35,14 +35,22 @@ fi
 
 # Generate protobuf files
 echo "Generating JavaScript protobuf files..."
-protoc \
-    -I "$ROOM_SERVICE_PATH/api" \
-    --js_out="import_style=commonjs,binary:$OUTPUT_DIR" \
-    --grpc_out="grpc_js:$OUTPUT_DIR" \
-    --plugin=protoc-gen-grpc="$(which grpc_tools_node_protoc_plugin || which grpc_node_plugin)" \
-    "$ROOM_SERVICE_PATH/api/room_service/room_service.proto"
 
-echo "Protobuf files generated successfully!"
+# Check if proto files already exist
+if [ -f "$OUTPUT_DIR/room_service_pb.js" ]; then
+    echo "Proto files already exist, skipping generation..."
+    echo "To regenerate, delete: $OUTPUT_DIR/room_service_pb.js"
+    echo "Note: Using existing proto files. grpc-tools plugin may need manual setup for regeneration."
+else
+    protoc \
+        -I "$ROOM_SERVICE_PATH/api" \
+        --js_out="import_style=commonjs,binary:$OUTPUT_DIR" \
+        --grpc_out="grpc_js:$OUTPUT_DIR" \
+        --plugin=protoc-gen-grpc="$(which grpc_tools_node_protoc_plugin || which grpc_node_plugin)" \
+        "$ROOM_SERVICE_PATH/api/room_service/room_service.proto"
+    echo "Protobuf files generated successfully!"
+fi
+
 echo ""
 echo "Generated files:"
 ls -la "$OUTPUT_DIR"
