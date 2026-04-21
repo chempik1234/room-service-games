@@ -102,7 +102,7 @@ async function joinRoom() {
 
     try {
         // Import RoomService dynamically
-        const { RoomServiceClient } = await import('room-service-js');
+        const { RoomServiceClient } = await import('@chempik1234/room-service-js');
 
         // Initialize client
         client = new RoomServiceClient({
