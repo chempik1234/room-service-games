@@ -6,6 +6,9 @@ let isDrawing = false;
 let lastX = 0;
 let lastY = 0;
 let players = new Map();
+let isRoomOwner = false;
+let drawQueue = []; // Batch draw updates
+let batchInterval = null;
 
 // Generate or retrieve user ID
 function getUserId() {
@@ -50,12 +53,28 @@ async function loadRooms() {
         if (data.rooms.length === 0) {
             container.innerHTML = '<p>No rooms available. Create one!</p>';
         } else {
-            container.innerHTML = data.rooms.map(room => `
-                <div class="room-item" onclick="selectRoom('${room.roomId}')">
-                    <div class="room-name">${room.roomOptions?.name || room.roomId}</div>
-                    <div class="room-info">ID: ${room.roomId}</div>
+            container.innerHTML = data.rooms.map(room => {
+                const playerCount = room.currentPlayers || 0;
+                const maxPlayers = room.maxPlayers || 10;
+                const isFull = playerCount >= maxPlayers;
+                const statusClass = isFull ? 'status-full' : 'status-available';
+
+                return `
+                <div class="room-item ${statusClass}" onclick="${isFull ? '' : `selectRoom('${room.roomId}')`}">
+                    <div class="room-header">
+                        <div class="room-name">${room.roomOptions?.name || room.roomId}</div>
+                        <div class="room-status ${statusClass}">
+                            ${isFull ? 'FULL' : 'OPEN'}
+                        </div>
+                    </div>
+                    <div class="room-details">
+                        <div class="room-info">👥 ${playerCount}/${maxPlayers} players</div>
+                        <div class="room-info">🎨 Canvas: ${room.hasCanvasData ? 'Active' : 'Empty'}</div>
+                        <div class="room-info">🕐 Created: ${new Date(room.createdAt).toLocaleTimeString()}</div>
+                    </div>
+                    <div class="room-info small">ID: ${room.roomId}</div>
                 </div>
-            `).join('');
+            `}).join('');
         }
     } catch (error) {
         console.error('Error loading rooms:', error);
@@ -180,16 +199,34 @@ function setupGameEvents(client) {
 
     client.on('leftRoom', (event) => {
         if (event.leftRoom?.kickedUserId) {
-            players.delete(event.leftRoom.kickedUserId);
+            const kickedUserId = event.leftRoom.kickedUserId;
+
+            // Check if we were kicked
+            if (kickedUserId === userId) {
+                showNotification('You were kicked from the room!', 5000);
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+                return;
+            }
+
+            players.delete(kickedUserId);
             updatePlayersList();
+            showNotification('Player left the room');
         }
     });
 
     client.on('dataEdited', (event) => {
         if (event.dataEdited?.dataId === 'canvas_draw') {
-            // Handle drawing data
+            // Handle single drawing data (legacy format)
             const drawData = JSON.parse(event.dataEdited.dataValue?.stringValue || '{}');
             drawOnCanvas(drawData);
+        } else if (event.dataEdited?.dataId === 'canvas_draw_batch') {
+            // Handle batched drawing data (new optimized format)
+            const batchData = JSON.parse(event.dataEdited.dataValue?.stringValue || '{}');
+            if (batchData.lines && Array.isArray(batchData.lines)) {
+                batchData.lines.forEach(line => drawOnCanvas(line));
+            }
         }
     });
 
@@ -220,11 +257,57 @@ function setupGameEvents(client) {
 // Update players list
 function updatePlayersList() {
     const list = document.getElementById('players-list');
-    list.innerHTML = Array.from(players.values()).map(player => `
-        <li>
-            ${player.name} ${player.id === userId ? '(You)' : ''}
-        </li>
-    `).join('');
+
+    if (players.size === 0) {
+        list.innerHTML = '<li>No players yet</li>';
+        return;
+    }
+
+    list.innerHTML = Array.from(players.values()).map(player => {
+        const isYou = player.id === userId;
+        const isOwner = player.id === currentRoomId; // Assuming room owner is stored differently
+
+        let playerInfo = `${player.name} ${isYou ? '(You)' : ''}`;
+
+        if (isOwner) {
+            playerInfo += ' 👑';
+        }
+
+        // Add kick button for room owner
+        if (isRoomOwner && !isYou && isOwner) {
+            playerInfo += ` <button class="btn-kick" onclick="kickPlayer('${player.id}')">🚫</button>`;
+        }
+
+        return `<li>${playerInfo}</li>`;
+    }).join('');
+}
+
+// Kick player function
+async function kickPlayer(targetUserId) {
+    if (!isRoomOwner) {
+        showNotification('Only room owner can kick players');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/rooms/${currentRoomId}/kick`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                adminUserId: userId,
+                targetUserId: targetUserId
+            })
+        });
+
+        if (response.ok) {
+            showNotification('Player kicked successfully');
+        } else {
+            showNotification('Failed to kick player');
+        }
+    } catch (error) {
+        console.error('Error kicking player:', error);
+        showNotification('Error kicking player');
+    }
 }
 
 // Drawing functions
@@ -239,24 +322,48 @@ function drawOnCanvas(data) {
     ctx.stroke();
 }
 
+// Batched drawing updates for better performance
 async function sendDrawData(fromX, fromY, toX, toY) {
     if (!client || !currentRoomId) return;
 
-    const drawData = {
+    // Add to batch queue
+    drawQueue.push({
         color: colorPicker.value,
         size: brushSize.value,
         fromX,
         fromY,
         toX,
         toY
-    };
+    });
+
+    // Start batch interval if not running
+    if (!batchInterval) {
+        batchInterval = setInterval(sendBatchedDrawData, 100); // Send every 100ms
+    }
+}
+
+// Send batched draw data
+async function sendBatchedDrawData() {
+    if (drawQueue.length === 0) {
+        clearInterval(batchInterval);
+        batchInterval = null;
+        return;
+    }
+
+    // Get current batch and clear queue
+    const batch = [...drawQueue];
+    drawQueue = [];
 
     try {
-        await client.sendData(currentRoomId, 'canvas_draw', {
-            stringValue: JSON.stringify(drawData)
-        });
+        // Send batched draw data
+        await client.setData(currentRoomId, userId, 'canvas_draw_batch', {
+            stringValue: JSON.stringify({
+                timestamp: Date.now(),
+                lines: batch
+            }
+        )});
     } catch (error) {
-        console.error('Error sending draw data:', error);
+        console.error('Error sending batched draw data:', error);
     }
 }
 
