@@ -114,12 +114,10 @@ export class RoomServiceClient {
    */
   private findProtoFile(): string {
     const possiblePaths = [
-      // Relative to RoomService project
-      path.resolve(__dirname, '../../../RoomService/api/room_service/room_service.proto'),
-      // Relative to SDK project
-      path.resolve(__dirname, '../../api/room_service/room_service.proto'),
-      // Path during development
-      path.resolve(__dirname, '../../../../RoomService/api/room_service/room_service.proto'),
+      // The ENV
+      path.resolve(process.env.ROOM_SERVICE_PROTO_PATH || './room_service.proto'),
+      // In the app
+      path.resolve(__dirname, '../../../../../room_service.proto'),
     ];
 
     for (const protoPath of possiblePaths) {
