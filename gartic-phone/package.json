@@ -1,6 +1,7 @@
 {
   "name": "gartic-phone-demo",
   "version": "1.0.0",
+  "type": "module",
   "description": "Gartic Phone style drawing/guessing game using RoomService SDK",
   "main": "server.js",
   "scripts": {

@@ -12,7 +12,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { RoomServiceClient } from 'room-service-js';
+import { RoomServiceClient } from '@chempik1234/room-service-js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

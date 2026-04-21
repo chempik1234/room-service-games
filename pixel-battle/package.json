@@ -1,6 +1,7 @@
 {
   "name": "pixel-battle-demo",
   "version": "1.0.0",
+  "type": "module",
   "description": "Pixel Battle Canvas - RoomService API Demonstration with gRPC Bridge",
   "main": "server.js",
   "scripts": {
