@@ -50,13 +50,7 @@ tasks:
     cmds:
       - npm run test:integration
 
-  # Demo tasks
-  demo:tictactoe:
-    desc: Run tic-tac-toe demo
-    dir: examples/tic-tac-toe
-    cmds:
-      - npm install
-      - npm start
+  # Demo tasks (examples moved to https://github.com/yourusername/room-service-games)
 
   # Code quality
   lint:

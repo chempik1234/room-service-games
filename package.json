@@ -23,8 +23,7 @@
     "prepublishOnly": "npm run build",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
-    "demo:setup": "bash scripts/setup-demo.sh",
-    "demo:tictactoe": "cd examples/tic-tac-toe && npm start"
+    "demo:setup": "bash scripts/setup-demo.sh"
   },
   "keywords": [
     "roomservice",
