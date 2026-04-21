@@ -84,7 +84,7 @@ Railway will detect the individual game folders. For each game:
 
 ```bash
 # RoomService Configuration
-ROOMSERVICE_HOST=roomky.chickenkiller.com:50052
+ROOMSERVICE_HOST=your-production-host:50052
 ROOMSERVICE_API_KEY=your-production-api-key-here
 
 # Server Configuration
