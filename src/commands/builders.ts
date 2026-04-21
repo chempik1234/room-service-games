@@ -28,21 +28,11 @@ export function buildCreateRoomCommand(
   userId: string,
   roomOptions: { [key: string]: string }
 ): any {
-  // Convert roomOptions to proper mapValue structure
-  const roomOptionsMap: { [key: string]: any } = {};
-  for (const key in roomOptions) {
-    roomOptionsMap[key] = {
-      stringValue: roomOptions[key]
-    };
-  }
-
   return {
     timestamp: Date.now() * 1000,
     userId,
     createRoom: {
-      roomOptions: {
-        values: roomOptionsMap
-      }
+      roomOptions: roomOptions // Send as flat map<string, string> as per protobuf definition
     }
   };
 }
