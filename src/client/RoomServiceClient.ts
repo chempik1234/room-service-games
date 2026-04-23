@@ -54,11 +54,6 @@ export class RoomServiceClient {
   private protoLoaded: boolean = false;
   private protoDefinition: any;
 
-  // Static connection pool for reusing gRPC channels
-  private static channelPool: Map<string, any> = new Map();
-  private static protoCache: Map<string, any> = new Map();
-  private static poolRefCount: Map<string, number> = new Map();
-
   // Health monitoring
   private healthCheckInterval?: NodeJS.Timeout;
   private healthCheckEnabled: boolean = false;
@@ -76,74 +71,6 @@ export class RoomServiceClient {
   }
 
   /**
-   * Get pool key for connection pooling
-   */
-  private getPoolKey(): string {
-    const { host, port } = parseHost(this.config.host);
-    return `${host}:${port}:${this.config.secure}`;
-  }
-
-  /**
-   * Get or create a pooled gRPC channel
-   */
-  private getOrCreateChannel(): any {
-    const poolKey = this.getPoolKey();
-    let channel = RoomServiceClient.channelPool.get(poolKey);
-
-    if (!channel) {
-      const { host, port } = parseHost(this.config.host);
-      const credentials = this.config.secure
-        ? grpc.ChannelCredentials.createSsl()
-        : grpc.ChannelCredentials.createInsecure();
-
-      const address = `${host}:${port}`;
-      channel = new grpc.Channel(address, credentials, this.getChannelOptions());
-
-      RoomServiceClient.channelPool.set(poolKey, channel);
-      RoomServiceClient.poolRefCount.set(poolKey, 0);
-    }
-
-    // Increment reference count
-    const refCount = RoomServiceClient.poolRefCount.get(poolKey) || 0;
-    RoomServiceClient.poolRefCount.set(poolKey, refCount + 1);
-
-    return channel;
-  }
-
-  /**
-   * Release a pooled channel (decrement reference count)
-   */
-  private releaseChannel(): void {
-    const poolKey = this.getPoolKey();
-    const refCount = RoomServiceClient.poolRefCount.get(poolKey) || 0;
-
-    if (refCount > 0) {
-      RoomServiceClient.poolRefCount.set(poolKey, refCount - 1);
-    }
-
-    // Optional: Clean up unused channels after a delay
-    // This is a simple implementation; production code might use a more sophisticated cleanup strategy
-    if (refCount <= 1) {
-      // Schedule cleanup after 5 minutes if no one uses it
-      setTimeout(() => {
-        const currentRefCount = RoomServiceClient.poolRefCount.get(poolKey) || 0;
-        if (currentRefCount === 0) {
-          const channel = RoomServiceClient.channelPool.get(poolKey);
-          if (channel) {
-            try {
-              channel.close();
-            } catch (error) {
-              // Ignore close errors
-            }
-            RoomServiceClient.channelPool.delete(poolKey);
-            RoomServiceClient.poolRefCount.delete(poolKey);
-          }
-        }
-      }, 5 * 60 * 1000); // 5 minutes
-    }
-  }
-
-  /**
    * Initialize the gRPC client (called automatically on first use)
    */
   private ensureClient(): void {
@@ -151,40 +78,35 @@ export class RoomServiceClient {
       return;
     }
 
-    // Get or create pooled channel
-    const channel = this.getOrCreateChannel();
+    const { host, port } = parseHost(this.config.host);
+    const credentials = this.config.secure
+      ? grpc.ChannelCredentials.createSsl()
+      : grpc.ChannelCredentials.createInsecure();
 
-    // Load or get cached proto definition
-    const poolKey = this.getPoolKey();
-    let protoDefinition = RoomServiceClient.protoCache.get(poolKey);
+    // Load proto file
+    const protoPath = this.findProtoFile();
 
-    if (!protoDefinition) {
-      // Load proto file
-      const protoPath = this.findProtoFile();
+    const packageDefinition = protoLoader.loadSync(protoPath, {
+      keepCase: false,
+      longs: String,
+      enums: String,
+      defaults: true,
+      oneofs: true,
+    });
 
-      const packageDefinition = protoLoader.loadSync(protoPath, {
-        keepCase: false,
-        longs: String,
-        enums: String,
-        defaults: true,
-        oneofs: true,
-      });
+    const protoDefinition = grpc.loadPackageDefinition(packageDefinition) as any;
 
-      protoDefinition = grpc.loadPackageDefinition(packageDefinition) as any;
-
-      if (!protoDefinition.api || !protoDefinition.api.RoomService) {
-        throw new RoomServiceError(
-          `Failed to load RoomService from ${protoPath}`,
-          2
-        );
-      }
-
-      RoomServiceClient.protoCache.set(poolKey, protoDefinition);
+    if (!protoDefinition.api || !protoDefinition.api.RoomService) {
+      throw new RoomServiceError(
+        `Failed to load RoomService from ${protoPath}`,
+        2
+      );
     }
 
-    // Create client using pooled channel and cached proto
-    const GrpcRoomServiceClient = protoDefinition.api.RoomService;
-    this.client = new GrpcRoomServiceClient(channel);
+    const RoomServiceClientConstructor = protoDefinition.api.RoomService;
+    const address = `${host}:${port}`;
+
+    this.client = new RoomServiceClientConstructor(address, credentials, this.getChannelOptions());
 
     this.protoLoaded = true;
   }
@@ -804,8 +726,7 @@ export class RoomServiceClient {
 
     if (this.client) {
       try {
-        // Release the channel back to the pool instead of closing it
-        this.releaseChannel();
+        this.client.close();
       } catch (error) {
         // Ignore close errors
       }
