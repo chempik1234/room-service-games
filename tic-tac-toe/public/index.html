@@ -357,25 +357,25 @@
       // Stop polling first
       stopPolling();
 
-      // Call server to leave the room (don't wait for it)
+      // Call server to leave the room and wait for completion
       if (currentRoomId && myUserId) {
-        fetch(`${API_BASE}/room/${currentRoomId}/leave`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: myUserId })
-        }).catch(err => {
-          console.error('Error leaving room (non-critical):', err);
-        });
+        try {
+          await fetch(`${API_BASE}/room/${currentRoomId}/leave`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: myUserId })
+          });
+        } catch (err) {
+          console.error('Error leaving room:', err);
+        }
       }
 
-      // Clear session and reset state
+      // Clear session and reset ALL state
       clearSession();
 
-      // Reset UI and state immediately
-      document.getElementById('join-screen').classList.remove('hidden');
-      document.getElementById('game-screen').classList.add('hidden');
-
+      // Reset all game state variables
       myUserId = getOrCreateUserId(); // Get fresh user ID for next game
+      myUserName = '';
       mySymbol = null;
       currentRoomId = null;
       board = [];
@@ -383,6 +383,44 @@
       gameStatus = 'waiting';
       currentPlayer = 'X';
       winner = null;
+
+      // Reset UI elements to initial state
+      document.getElementById('join-screen').classList.remove('hidden');
+      document.getElementById('game-screen').classList.add('hidden');
+
+      // Reset form inputs
+      const nameInput = document.getElementById('player-name');
+      const roomIdInput = document.getElementById('room-id-input');
+      const joinBtn = document.getElementById('join-btn');
+
+      if (nameInput) nameInput.value = 'Player';
+      if (roomIdInput) roomIdInput.value = '';
+      if (joinBtn) {
+        joinBtn.disabled = false;
+        joinBtn.textContent = 'Join Game';
+      }
+
+      // Reset game display elements
+      const roomIdDisplay = document.getElementById('room-id-display');
+      const playerSymbol = document.getElementById('player-symbol');
+      const gameStatusEl = document.getElementById('game-status');
+      const statusMessage = document.getElementById('status-message');
+      const playersList = document.getElementById('players-list');
+
+      if (roomIdDisplay) roomIdDisplay.textContent = '';
+      if (playerSymbol) {
+        playerSymbol.textContent = '';
+        playerSymbol.className = 'symbol-display';
+      }
+      if (gameStatusEl) gameStatusEl.textContent = '';
+      if (statusMessage) {
+        statusMessage.textContent = '';
+        statusMessage.className = 'status-message';
+      }
+      if (playersList) playersList.innerHTML = '';
+
+      // Reinitialize board for clean state
+      initBoard();
     }
 
     // Join or create room
@@ -393,6 +431,18 @@
 
       myUserName = nameInput.value.trim() || 'Player';
       const roomIdInputValue = roomIdInput.value.trim();
+
+      // If already in a room, leave it first
+      if (currentRoomId && currentRoomId !== roomIdInputValue) {
+        await leaveRoom();
+        // Update references after leaveRoom reset them
+        const freshNameInput = document.getElementById('player-name');
+        const freshRoomIdInput = document.getElementById('room-id-input');
+        const freshJoinBtn = document.getElementById('join-btn');
+
+        myUserName = freshNameInput.value.trim() || 'Player';
+        joinBtn = freshJoinBtn;
+      }
 
       joinBtn.disabled = true;
       joinBtn.textContent = 'Connecting...';
@@ -460,6 +510,10 @@
         if (pollInterval) clearInterval(pollInterval);
         pollInterval = setInterval(pollGameState, 500);
 
+        // Reset button state on success
+        joinBtn.disabled = false;
+        joinBtn.textContent = 'Join Game';
+
       } catch (error) {
         console.error('Error joining room:', error);
         alert('Error: ' + error.message);
@@ -470,6 +524,11 @@
 
     // Enter game UI directly with existing state
     function enterGameUI(data, roomId) {
+      // Clear any existing state first
+      if (currentRoomId && currentRoomId !== roomId) {
+        stopPolling();
+      }
+
       currentRoomId = roomId;
       myUserId = data.userId;
       mySymbol = data.symbol;
@@ -489,6 +548,7 @@
       document.getElementById('player-symbol').textContent = mySymbol;
       document.getElementById('player-symbol').className = 'symbol-display ' + mySymbol.toLowerCase();
 
+      // Clean and initialize board
       initBoard();
       updateBoard();
       updateStatus();

@@ -176,6 +176,11 @@ async function joinRoom() {
         return;
     }
 
+    // If already in a room, leave it first
+    if (currentRoomId && currentRoomId !== roomId) {
+        await leaveRoom();
+    }
+
     try {
         // Join room via HTTP API
         const response = await fetch(`/api/rooms/${roomId}/join`, {
@@ -196,6 +201,34 @@ async function joinRoom() {
 
         const data = await response.json();
         currentRoomId = roomId;
+
+        // Reset game state for new room
+        gamePhase = 'waiting';
+        myRole = 'player';
+        currentWord = null;
+        players.clear();
+        scores.clear();
+
+        // Clear canvases for fresh start
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        viewerCtx.fillStyle = 'white';
+        viewerCtx.fillRect(0, 0, viewerCanvas.width, viewerCanvas.height);
+
+        // Clear UI elements
+        document.getElementById('guesses-list').innerHTML = '';
+        document.getElementById('round-results').innerHTML = '';
+        document.getElementById('final-results').innerHTML = '';
+        document.getElementById('role-display').textContent = '';
+        document.getElementById('current-word').textContent = '';
+        document.getElementById('guess-input').value = '';
+
+        // Hide all game phases
+        const phases = ['drawing-phase', 'guessing-phase', 'results-phase', 'gameover-phase', 'waiting-phase'];
+        phases.forEach(phase => {
+            const element = document.getElementById(phase);
+            if (element) element.style.display = 'none';
+        });
 
         // Join Socket.io room for real-time updates
         socket.emit('join-game', roomId);
@@ -233,11 +266,57 @@ async function leaveRoom() {
                 socket.emit('leave-room', currentRoomId);
             }
 
-            // Reset state
+            // Reset ALL game state
             currentRoomId = null;
             players.clear();
             scores.clear();
             gamePhase = 'waiting';
+            myRole = 'player';
+            currentWord = null;
+
+            // Clear timers
+            if (roundTimer) {
+                clearInterval(roundTimer);
+                roundTimer = null;
+            }
+            if (gameStateTimer) {
+                clearInterval(gameStateTimer);
+                gameStateTimer = null;
+            }
+
+            // Reset UI elements
+            document.getElementById('current-game-name').textContent = 'Game: ';
+            document.getElementById('round-info').textContent = 'Round: 0/0';
+            document.getElementById('timer').textContent = '⏱️ 0:00';
+            document.getElementById('role-display').textContent = '';
+            document.getElementById('current-word').textContent = '';
+            document.getElementById('guess-input').value = '';
+            document.getElementById('guesses-list').innerHTML = '';
+            document.getElementById('players-list').innerHTML = '<div class="player-item">No players yet</div>';
+            document.getElementById('scores-list').innerHTML = '<div class="score-item">No scores yet</div>';
+            document.getElementById('round-results').innerHTML = '';
+            document.getElementById('final-results').innerHTML = '';
+
+            // Reset button states
+            const guessInput = document.getElementById('guess-input');
+            const submitButton = document.getElementById('submit-guess');
+            const startButton = document.getElementById('start-game');
+            if (guessInput) {
+                guessInput.disabled = false;
+            }
+            if (submitButton) {
+                submitButton.disabled = false;
+            }
+            if (startButton) {
+                startButton.style.display = 'none';
+            }
+
+            // Hide all game phases
+            const phases = ['drawing-phase', 'guessing-phase', 'results-phase', 'gameover-phase', 'waiting-phase'];
+            phases.forEach(phase => {
+                const element = document.getElementById(phase);
+                if (element) element.style.display = 'none';
+            });
 
             // Switch back to lobby
             document.getElementById('game-section').style.display = 'none';
@@ -248,6 +327,13 @@ async function leaveRoom() {
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             viewerCtx.fillStyle = 'white';
             viewerCtx.fillRect(0, 0, viewerCanvas.width, viewerCanvas.height);
+
+            // Clear drawing queue and batch interval
+            drawQueue = [];
+            if (batchInterval) {
+                clearInterval(batchInterval);
+                batchInterval = null;
+            }
 
             showNotification('Left game successfully');
         } catch (error) {
@@ -634,6 +720,16 @@ function addGuessToList(userId, guess, isCorrect) {
     const list = document.getElementById('guesses-list');
     const player = players.get(userId);
     const playerName = player?.name || 'Unknown';
+
+    // For wrong guesses, remove previous wrong guesses from the same user
+    if (!isCorrect) {
+        const existingGuesses = list.querySelectorAll('.guess-item');
+        existingGuesses.forEach(item => {
+            if (item.textContent.startsWith(playerName + ':') && item.classList.contains('incorrect')) {
+                item.remove();
+            }
+        });
+    }
 
     const guessItem = document.createElement('div');
     guessItem.className = `guess-item ${isCorrect ? 'correct' : 'incorrect'}`;

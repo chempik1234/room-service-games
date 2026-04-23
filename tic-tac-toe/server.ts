@@ -270,7 +270,28 @@ app.post('/api/room/:roomId/leave', async (req, res) => {
     const { roomId } = req.params;
     const { userId } = req.body;
 
+    console.log(`User ${userId} leaving room ${roomId}`);
+
+    // Leave the RoomService room
     await roomServiceClient.leaveRoom(roomId, userId);
+
+    // Get current room state to see if we need to clean up
+    try {
+      const snapshot = await roomServiceClient.getRoomSnapshot(roomId, userId);
+
+      // If room is now empty, it will be automatically cleaned up by RoomService
+      // If there's still one player left, reset the game for the next player
+      if (snapshot.users && snapshot.users.length === 1) {
+        console.log(`Only one player left in room ${roomId}, resetting game`);
+        await roomServiceClient.setData(roomId, userId, 'board', Array(9).fill(''));
+        await roomServiceClient.setData(roomId, userId, 'currentPlayer', 'X');
+        await roomServiceClient.setData(roomId, userId, 'gameStatus', 'waiting');
+        await roomServiceClient.setData(roomId, userId, 'winner', '');
+      }
+    } catch (error) {
+      // Room might not exist anymore, which is fine
+      console.log(`Room ${roomId} might not exist anymore, which is fine`);
+    }
 
     res.json({ success: true });
   } catch (error) {

@@ -11,14 +11,20 @@ const server = createServer(app);
 const io = new SocketIOServer(server);
 const PORT = process.env.PORT || 3002;
 
-// Game word list for drawing
+// Game word list for drawing (Russian words)
 const WORD_LIST = [
-  'sun', 'tree', 'house', 'car', 'dog', 'cat', 'bird', 'fish', 'flower',
-  'mountain', 'beach', 'computer', 'phone', 'book', 'pencil', 'chair',
-  'table', 'clock', 'guitar', 'pizza', 'ice cream', 'rainbow', 'star',
-  'moon', 'cloud', 'robot', 'alien', 'dragon', 'castle', 'boat',
-  'airplane', 'bicycle', 'butterfly', 'elephant', 'giraffe', 'lion',
-  'monkey', 'penguin', 'turtle', 'snake', 'spider', 'bat', 'owl'
+  'солнце', 'дерево', 'дом', 'машина', 'собака', 'кошка', 'птица', 'рыба', 'цветок',
+  'гора', 'пляж', 'компьютер', 'телефон', 'книга', 'карандаш', 'стул',
+  'стол', 'часы', 'гитара', 'пицца', 'мороженое', 'радуга', 'звезда',
+  'луна', 'облако', 'робот', 'инопланетянин', 'дракон', 'замок', 'лодка',
+  'самолёт', 'велосипед', 'бабочка', 'слон', 'жираф', 'лев',
+  'обезьяна', 'пингвин', 'черепаха', 'змея', 'паук', 'летучая мышь', 'сова',
+  'яблоко', 'банан', 'апельсин', 'клубника', 'арбуз', 'виноград',
+  'молоток', 'отвертка', 'ножницы', 'ключ', 'замок',
+  'зонт', 'очки', 'шляпа', 'перчатки', 'носки',
+  'мяч', 'кукла', 'игрушка', 'конструктор',
+  'дверь', 'окно', 'потолок', 'пол', 'стена',
+  'море', 'река', 'озеро', 'лес', 'поле'
 ];
 
 // Game state management
@@ -125,8 +131,58 @@ app.post('/api/leave', async (req, res) => {
   try {
     const { roomId, userId } = req.body;
 
+    console.log(`User ${userId} leaving room ${roomId}`);
+
     if (client && roomId && userId) {
+      // Leave the RoomService room
       await client.leaveRoom(roomId, userId);
+
+      // Clean up game state if user was in a game
+      if (games.has(roomId)) {
+        const gameState = games.get(roomId);
+
+        // Remove user from game state
+        if (gameState.players && gameState.players.has(userId)) {
+          gameState.players.delete(userId);
+        }
+
+        // Remove user's guesses
+        if (gameState.guesses && gameState.guesses.has(userId)) {
+          gameState.guesses.delete(userId);
+        }
+
+        // If the leaving user was the current drawer, end the round early
+        if (gameState.currentDrawer === userId && gameState.status === 'drawing') {
+          // Select a new drawer or end round
+          try {
+            const snapshot = await client.getRoomSnapshot(roomId);
+            if (snapshot.users.length < 2) {
+              // Not enough players, end the game
+              gameState.status = 'finished';
+              io.to(roomId).emit('game-over', {
+                finalScores: Object.fromEntries(gameState.scores),
+                winner: Array.from(gameState.scores.entries()).sort((a, b) => b[1] - a[1])[0] || ['unknown', 0]
+              });
+            } else {
+              // Start new round with new drawer
+              await startNewRound(roomId, gameState);
+            }
+          } catch (error) {
+            console.error('Error handling drawer leaving:', error);
+          }
+        }
+
+        // If room is empty, clean up game state
+        try {
+          const snapshot = await client.getRoomSnapshot(roomId);
+          if (snapshot.users.length === 0) {
+            games.delete(roomId);
+            console.log(`Cleaned up empty game state for room ${roomId}`);
+          }
+        } catch (error) {
+          console.error('Error checking room state:', error);
+        }
+      }
     }
 
     res.json({ success: true });
@@ -327,8 +383,10 @@ app.post('/api/rooms/:roomId/guess', async (req, res) => {
       return res.status(400).json({ error: 'Drawer cannot guess' });
     }
 
-    if (gameState.guesses.has(userId)) {
-      return res.status(400).json({ error: 'Already guessed this round' });
+    // Only check if user has already CORRECTLY guessed (wrong guesses can be retried)
+    const userGuess = gameState.guesses.get(userId);
+    if (userGuess && userGuess.isCorrect) {
+      return res.status(400).json({ error: 'Already guessed correctly this round' });
     }
 
     const isCorrect = guess.toLowerCase().trim() === gameState.currentWord.toLowerCase();
@@ -347,6 +405,7 @@ app.post('/api/rooms/:roomId/guess', async (req, res) => {
       const drawerScore = gameState.scores.get(gameState.currentDrawer) || 0;
       gameState.scores.set(gameState.currentDrawer, drawerScore + 50);
 
+      // Mark user as having guessed correctly
       gameState.guesses.set(userId, { guess, isCorrect, timestamp: Date.now() });
 
       // Check if all non-drawer players have guessed correctly
@@ -361,7 +420,8 @@ app.post('/api/rooms/:roomId/guess', async (req, res) => {
 
       res.json({ correct: true, score, message: 'Correct guess!' });
     } else {
-      gameState.guesses.set(userId, { guess, isCorrect, timestamp: Date.now() });
+      // For wrong guesses, update the guess but don't mark as "has guessed" to allow retries
+      gameState.guesses.set(userId, { guess, isCorrect: false, timestamp: Date.now() });
       res.json({ correct: false, message: 'Wrong guess, try again!' });
     }
   } catch (error) {
@@ -434,12 +494,16 @@ async function startGuessingPhase(roomId, gameState) {
 async function endRound(roomId, gameState) {
   gameState.status = 'round_over';
 
+  // Only include correct guesses in the round results
+  const correctGuesses = Array.from(gameState.guesses.entries())
+    .filter(([userId, guessData]) => guessData.isCorrect);
+
   // Notify room of round results via WebSocket
   io.to(roomId).emit('round-over', {
     round: gameState.currentRound,
     word: gameState.currentWord,
     scores: Object.fromEntries(gameState.scores),
-    guesses: Array.from(gameState.guesses.entries())
+    guesses: correctGuesses
   });
 
   // Wait a bit then start next round or end game
