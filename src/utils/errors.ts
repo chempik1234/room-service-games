@@ -51,6 +51,15 @@ export class RoomServiceError extends Error {
   }
 
   /**
+   * Check if this error is retryable (transient failures)
+   */
+  isRetryable(): boolean {
+    return this.code === 14 || // UNAVAILABLE - service temporarily down
+           this.code === 8 ||  // RESOURCE_EXHAUSTED - rate limited
+           this.code === 4;    // DEADLINE_EXCEEDED - timeout
+  }
+
+  /**
    * Get user-friendly error message
    */
   getUserMessage(): string {

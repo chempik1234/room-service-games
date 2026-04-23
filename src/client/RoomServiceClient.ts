@@ -54,6 +54,16 @@ export class RoomServiceClient {
   private protoLoaded: boolean = false;
   private protoDefinition: any;
 
+  // Static connection pool for reusing gRPC channels
+  private static channelPool: Map<string, any> = new Map();
+  private static protoCache: Map<string, any> = new Map();
+  private static poolRefCount: Map<string, number> = new Map();
+
+  // Health monitoring
+  private healthCheckInterval?: NodeJS.Timeout;
+  private healthCheckEnabled: boolean = false;
+  private healthCheckIntervalMs: number = 30000; // 30 seconds default
+
   constructor(options: RoomServiceClientOptions = {}) {
     const host = options.host || 'localhost:50050';
     this.config = {
@@ -66,6 +76,74 @@ export class RoomServiceClient {
   }
 
   /**
+   * Get pool key for connection pooling
+   */
+  private getPoolKey(): string {
+    const { host, port } = parseHost(this.config.host);
+    return `${host}:${port}:${this.config.secure}`;
+  }
+
+  /**
+   * Get or create a pooled gRPC channel
+   */
+  private getOrCreateChannel(): any {
+    const poolKey = this.getPoolKey();
+    let channel = RoomServiceClient.channelPool.get(poolKey);
+
+    if (!channel) {
+      const { host, port } = parseHost(this.config.host);
+      const credentials = this.config.secure
+        ? grpc.ChannelCredentials.createSsl()
+        : grpc.ChannelCredentials.createInsecure();
+
+      const address = `${host}:${port}`;
+      channel = new grpc.Channel(address, credentials, this.getChannelOptions());
+
+      RoomServiceClient.channelPool.set(poolKey, channel);
+      RoomServiceClient.poolRefCount.set(poolKey, 0);
+    }
+
+    // Increment reference count
+    const refCount = RoomServiceClient.poolRefCount.get(poolKey) || 0;
+    RoomServiceClient.poolRefCount.set(poolKey, refCount + 1);
+
+    return channel;
+  }
+
+  /**
+   * Release a pooled channel (decrement reference count)
+   */
+  private releaseChannel(): void {
+    const poolKey = this.getPoolKey();
+    const refCount = RoomServiceClient.poolRefCount.get(poolKey) || 0;
+
+    if (refCount > 0) {
+      RoomServiceClient.poolRefCount.set(poolKey, refCount - 1);
+    }
+
+    // Optional: Clean up unused channels after a delay
+    // This is a simple implementation; production code might use a more sophisticated cleanup strategy
+    if (refCount <= 1) {
+      // Schedule cleanup after 5 minutes if no one uses it
+      setTimeout(() => {
+        const currentRefCount = RoomServiceClient.poolRefCount.get(poolKey) || 0;
+        if (currentRefCount === 0) {
+          const channel = RoomServiceClient.channelPool.get(poolKey);
+          if (channel) {
+            try {
+              channel.close();
+            } catch (error) {
+              // Ignore close errors
+            }
+            RoomServiceClient.channelPool.delete(poolKey);
+            RoomServiceClient.poolRefCount.delete(poolKey);
+          }
+        }
+      }, 5 * 60 * 1000); // 5 minutes
+    }
+  }
+
+  /**
    * Initialize the gRPC client (called automatically on first use)
    */
   private ensureClient(): void {
@@ -73,40 +151,71 @@ export class RoomServiceClient {
       return;
     }
 
-    const { host, port } = parseHost(this.config.host);
-    const credentials = this.config.secure
-      ? grpc.ChannelCredentials.createSsl()
-      : grpc.ChannelCredentials.createInsecure();
+    // Get or create pooled channel
+    const channel = this.getOrCreateChannel();
 
-    // Load proto file
-    const protoPath = this.findProtoFile();
+    // Load or get cached proto definition
+    const poolKey = this.getPoolKey();
+    let protoDefinition = RoomServiceClient.protoCache.get(poolKey);
 
-    const packageDefinition = protoLoader.loadSync(protoPath, {
-      keepCase: false,
-      longs: String,
-      enums: String,
-      defaults: true,
-      oneofs: true,
-    });
+    if (!protoDefinition) {
+      // Load proto file
+      const protoPath = this.findProtoFile();
 
-    const protoDefinition = grpc.loadPackageDefinition(packageDefinition) as any;
+      const packageDefinition = protoLoader.loadSync(protoPath, {
+        keepCase: false,
+        longs: String,
+        enums: String,
+        defaults: true,
+        oneofs: true,
+      });
 
-    if (!protoDefinition.api || !protoDefinition.api.RoomService) {
-      throw new RoomServiceError(
-        `Failed to load RoomService from ${protoPath}`,
-        2
-      );
+      protoDefinition = grpc.loadPackageDefinition(packageDefinition) as any;
+
+      if (!protoDefinition.api || !protoDefinition.api.RoomService) {
+        throw new RoomServiceError(
+          `Failed to load RoomService from ${protoPath}`,
+          2
+        );
+      }
+
+      RoomServiceClient.protoCache.set(poolKey, protoDefinition);
     }
 
-    const RoomServiceClient = protoDefinition.api.RoomService;
-    const address = `${host}:${port}`;
-
-    this.client = new RoomServiceClient(address, credentials, {
-      'grpc.max_receive_message_length': -1,
-      'grpc.max_send_message_length': -1,
-    });
+    // Create client using pooled channel and cached proto
+    const GrpcRoomServiceClient = protoDefinition.api.RoomService;
+    this.client = new GrpcRoomServiceClient(channel);
 
     this.protoLoaded = true;
+  }
+
+  /**
+   * Get enhanced gRPC channel options for better reliability and performance
+   */
+  private getChannelOptions(): object {
+    return {
+      // Message size limits
+      'grpc.max_receive_message_length': -1,
+      'grpc.max_send_message_length': -1,
+
+      // Keepalive settings to prevent connection drops
+      'grpc.keepalive_time_ms': 30000,      // Send keepalive ping every 30 seconds
+      'grpc.keepalive_timeout_ms': 5000,    // Wait 5 seconds for keepalive ack
+      'grpc.keepalive_permit_without_calls': 1,  // Allow keepalive when no active calls
+      'grpc.http2.min_time_between_pings_ms': 10000,  // Minimum time between pings
+      'grpc.http2.max_pings_without_data': 0,  // Unlimited pings without data
+
+      // Connection backoff settings
+      'grpc.min_reconnect_backoff_ms': 1000,   // Start with 1 second backoff
+      'grpc.max_reconnect_backoff_ms': 10000,  // Max 10 seconds backoff
+      'grpc.initial_reconnect_backoff_ms': 1000,  // Initial backoff
+
+      // Request timeout
+      'grpc.deadline': this.config.timeout,
+
+      // User agent for monitoring
+      'grpc.primary_user_agent': 'RoomService-TS-SDK/1.0.3',
+    };
   }
 
   /**
@@ -147,6 +256,47 @@ export class RoomServiceClient {
    * Execute a single command and return the result
    */
   private async singleCommand(command: any): Promise<any> {
+    return this.singleCommandWithRetry(command);
+  }
+
+  /**
+   * Execute a single command with retry logic and exponential backoff
+   */
+  private async singleCommandWithRetry(command: any): Promise<any> {
+    const maxAttempts = this.config.retryAttempts || 3;
+    const baseDelay = 1000; // 1 second
+    let lastError: Error = new Error('Unknown error occurred');
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        return await this.executeSingleCommand(command);
+      } catch (error) {
+        lastError = error as Error;
+
+        // Check if error is retryable
+        const isRetryable = error instanceof RoomServiceError && error.isRetryable();
+
+        if (!isRetryable) {
+          // Don't retry non-retryable errors
+          throw error;
+        }
+
+        // Don't wait after the last attempt
+        if (attempt < maxAttempts - 1) {
+          const delay = baseDelay * Math.pow(2, attempt); // Exponential backoff
+          console.log(`[RoomService SDK] Retry attempt ${attempt + 1}/${maxAttempts} after ${delay}ms (error: ${(error as Error).message})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  /**
+   * Execute a single command without retry logic
+   */
+  private async executeSingleCommand(command: any): Promise<any> {
     this.ensureClient();
 
     console.log('[RoomService SDK] Sending command:', JSON.stringify(command, null, 2));
@@ -554,6 +704,92 @@ export class RoomServiceClient {
     return new RoomServiceStream(this.client, this.createMetadata());
   }
 
+  // ==================== Health Monitoring ====================
+
+  /**
+   * Enable connection health monitoring
+   *
+   * @param intervalMs - Health check interval in milliseconds (default: 30000)
+   *
+   * @example
+   * client.enableHealthMonitoring(60000); // Check every minute
+   */
+  enableHealthMonitoring(intervalMs: number = 30000): void {
+    this.healthCheckEnabled = true;
+    this.healthCheckIntervalMs = intervalMs;
+
+    // Clear existing interval if any
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+    }
+
+    // Start health checks
+    this.startHealthCheck();
+
+    console.log(`[RoomService SDK] Health monitoring enabled (${intervalMs}ms interval)`);
+  }
+
+  /**
+   * Disable connection health monitoring
+   *
+   * @example
+   * client.disableHealthMonitoring();
+   */
+  disableHealthMonitoring(): void {
+    this.healthCheckEnabled = false;
+
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = undefined;
+    }
+
+    console.log('[RoomService SDK] Health monitoring disabled');
+  }
+
+  /**
+   * Start periodic health checks
+   */
+  private startHealthCheck(): void {
+    this.healthCheckInterval = setInterval(async () => {
+      await this.performHealthCheck();
+    }, this.healthCheckIntervalMs);
+  }
+
+  /**
+   * Perform a health check
+   */
+  private async performHealthCheck(): Promise<boolean> {
+    try {
+      // Use listRooms as a lightweight health check
+      await this.listRooms();
+      return true;
+    } catch (error) {
+      console.warn('[RoomService SDK] Health check failed:', error);
+
+      // Emit health status event if possible
+      if (error instanceof RoomServiceError && error.isRetryable()) {
+        console.warn('[RoomService SDK] Connection health issue detected');
+      }
+
+      return false;
+    }
+  }
+
+  /**
+   * Manually trigger a health check
+   *
+   * @returns true if healthy, false otherwise
+   *
+   * @example
+   * const isHealthy = await client.checkHealth();
+   * if (!isHealthy) {
+   *   console.log('Connection is unhealthy');
+   * }
+   */
+  async checkHealth(): Promise<boolean> {
+    return await this.performHealthCheck();
+  }
+
   // ==================== Cleanup ====================
 
   /**
@@ -563,12 +799,17 @@ export class RoomServiceClient {
    * await client.close();
    */
   async close(): Promise<void> {
+    // Stop health monitoring
+    this.disableHealthMonitoring();
+
     if (this.client) {
       try {
-        this.client.close();
+        // Release the channel back to the pool instead of closing it
+        this.releaseChannel();
       } catch (error) {
         // Ignore close errors
       }
+      this.client = null;
       this.protoLoaded = false;
     }
   }
@@ -583,26 +824,76 @@ export class RoomServiceClient {
  */
 export class RoomServiceStream {
   private stream: any;
+  private grpcClient: any;
   private metadata: grpc.Metadata;
   private eventHandlers: Map<string, Set<(event: any) => void>> = new Map();
   private ended: boolean = false;
 
+  // Reconnection properties
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 5;
+  private reconnectDelay: number = 1000; // Base delay in ms
+  private shouldReconnect: boolean = true;
+  private reconnectTimeout?: NodeJS.Timeout;
+
   constructor(grpcClient: any, metadata: grpc.Metadata) {
+    this.grpcClient = grpcClient;
     this.metadata = metadata;
     this.stream = grpcClient.stream(this.metadata);
 
     // Start receiving events
+    this.setupStreamHandlers();
+  }
+
+  /**
+   * Setup stream event handlers
+   */
+  private setupStreamHandlers(): void {
     this.stream.on('data', (data: any) => {
       this.handleData(data);
     });
 
     this.stream.on('error', (error: any) => {
-      this.handleError(error);
+      this.handleErrorWithReconnect(error);
     });
 
     this.stream.on('end', () => {
-      this.ended = true;
+      this.handleStreamEnd();
     });
+  }
+
+  /**
+   * Configure reconnection behavior
+   *
+   * @param maxAttempts - Maximum number of reconnection attempts (default: 5)
+   * @param baseDelay - Base delay between attempts in ms (default: 1000)
+   *
+   * @example
+   * stream.setReconnectSettings(10, 2000); // Max 10 attempts, 2s base delay
+   */
+  setReconnectSettings(maxAttempts: number, baseDelay: number): void {
+    this.maxReconnectAttempts = maxAttempts;
+    this.reconnectDelay = baseDelay;
+  }
+
+  /**
+   * Disable automatic reconnection
+   *
+   * @example
+   * stream.disableReconnect();
+   */
+  disableReconnect(): void {
+    this.shouldReconnect = false;
+  }
+
+  /**
+   * Enable automatic reconnection
+   *
+   * @example
+   * stream.enableReconnect();
+   */
+  enableReconnect(): void {
+    this.shouldReconnect = true;
   }
 
   /**
@@ -619,7 +910,100 @@ export class RoomServiceStream {
   }
 
   /**
-   * Handle stream errors
+   * Handle stream errors with reconnection logic
+   */
+  private handleErrorWithReconnect(error: any): void {
+    console.error('[RoomService Stream] Error:', error);
+
+    const wrappedError = wrapGrpcError(error);
+
+    // Check if error is retryable
+    const isRetryable = wrappedError instanceof RoomServiceError && wrappedError.isRetryable();
+
+    if (this.shouldReconnect && isRetryable && this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // Exponential backoff
+
+      console.log(`[RoomService Stream] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+
+      this.reconnectTimeout = setTimeout(() => {
+        this.reconnect();
+      }, delay);
+    } else {
+      // Emit error if we can't reconnect
+      this.emit('error', wrappedError);
+      this.ended = true;
+    }
+  }
+
+  /**
+   * Handle stream end
+   */
+  private handleStreamEnd(): void {
+    console.log('[RoomService Stream] Stream ended');
+
+    if (this.shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+
+      console.log(`[RoomService Stream] Attempting reconnection in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+
+      this.reconnectTimeout = setTimeout(() => {
+        this.reconnect();
+      }, delay);
+    } else {
+      this.ended = true;
+      this.emit('disconnected', { reason: 'stream-ended' });
+    }
+  }
+
+  /**
+   * Reconnect the stream
+   */
+  private reconnect(): void {
+    try {
+      console.log('[RoomService Stream] Reconnecting...');
+
+      // Clean up old stream
+      if (this.stream) {
+        this.stream.removeAllListeners();
+        try {
+          this.stream.end();
+        } catch (error) {
+          // Ignore cleanup errors
+        }
+      }
+
+      // Create new stream
+      this.stream = this.grpcClient.stream(this.metadata);
+      this.setupStreamHandlers();
+
+      console.log('[RoomService Stream] Reconnected successfully');
+
+      // Reset reconnect attempts on successful reconnection
+      this.reconnectAttempts = 0;
+
+      // Emit reconnected event
+      this.emit('reconnected', { timestamp: Date.now() });
+
+    } catch (error) {
+      console.error('[RoomService Stream] Reconnection failed:', error);
+
+      // If reconnection fails, schedule another attempt
+      if (this.reconnectAttempts < this.maxReconnectAttempts) {
+        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts);
+        this.reconnectTimeout = setTimeout(() => {
+          this.reconnect();
+        }, delay);
+      } else {
+        this.emit('error', wrapGrpcError(error));
+        this.ended = true;
+      }
+    }
+  }
+
+  /**
+   * Handle stream errors (legacy method for compatibility)
    */
   private handleError(error: any): void {
     this.emit('error', wrapGrpcError(error));
@@ -767,8 +1151,21 @@ export class RoomServiceStream {
    * Close the stream
    */
   async close(): Promise<void> {
-    if (!this.ended) {
-      this.stream.end();
+    // Prevent any further reconnection attempts
+    this.shouldReconnect = false;
+
+    // Clear any pending reconnection timeout
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = undefined;
+    }
+
+    if (!this.ended && this.stream) {
+      try {
+        this.stream.end();
+      } catch (error) {
+        // Ignore close errors
+      }
       this.ended = true;
     }
   }
