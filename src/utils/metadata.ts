@@ -15,11 +15,16 @@ export interface RoomServiceConfig {
 /**
  * Create gRPC metadata with API key
  */
-export function createMetadata(apiKey?: string): grpc.Metadata {
+export function createMetadata(apiKey?: string, roomId?: string): grpc.Metadata {
   const metadata = new grpc.Metadata();
 
   if (apiKey) {
     metadata.set('x-api-key', apiKey);
+  }
+
+  // Add room-id for optimized single-room streaming
+  if (roomId) {
+    metadata.set('room-id', roomId);
   }
 
   return metadata;

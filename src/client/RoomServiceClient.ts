@@ -166,11 +166,17 @@ export class RoomServiceClient {
   }
 
   /**
-   * Create metadata with API key
+   * Create metadata with API key and optional room ID
    */
-  private createMetadata(): grpc.Metadata {
+  private createMetadata(roomId?: string): grpc.Metadata {
     const metadata = new grpc.Metadata();
     metadata.set('x-api-key', this.config.apiKey);
+
+    // Add room-id for optimized single-room streaming
+    if (roomId) {
+      metadata.set('room-id', roomId);
+    }
+
     return metadata;
   }
 
@@ -602,10 +608,18 @@ export class RoomServiceClient {
   /**
    * Open a bidirectional stream for real-time updates
    *
+   * @param roomId - Optional room ID for optimized single-room streaming.
+   *                 When provided, client only receives events from this room.
+   *                 When omitted, client receives events from all rooms.
+   *
    * @returns A RoomServiceStream object for sending commands and receiving events
    *
    * @example
+   * // Default: receive events from all rooms
    * const stream = await client.openStream();
+   *
+   * // Optimized: receive events from specific room only (recommended for games)
+   * const gameStream = await client.openStream('room-uuid-123');
    *
    * stream.on('event', (event) => {
    *   console.log('Received event:', event.type);
@@ -621,9 +635,9 @@ export class RoomServiceClient {
    * // Later...
    * await stream.close();
    */
-  async openStream(): Promise<RoomServiceStream> {
+  async openStream(roomId?: string): Promise<RoomServiceStream> {
     this.ensureClient();
-    return new RoomServiceStream(this.client, this.createMetadata());
+    return new RoomServiceStream(this.client, this.createMetadata(roomId));
   }
 
   // ==================== Health Monitoring ====================

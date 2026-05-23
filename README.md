@@ -112,6 +112,44 @@ await stream.close();
 await client.close();
 ```
 
+### 🚀 Room-Specific Streaming (Optimized)
+
+For multiplayer games and apps where clients interact with one room at a time:
+
+```javascript
+// Optimized streaming - receive events from specific room only
+const roomId = 'game-room-123';
+const gameStream = await client.openStream(roomId);
+
+gameStream.on('DataEdited', (event) => {
+  console.log('Game move:', event.dataId, event.value);
+  // Update your game UI
+});
+
+gameStream.on('JoinedRoom', (event) => {
+  console.log('Player joined:', event.user.name);
+  // Update player list
+});
+
+// All commands must match the specified room
+await gameStream.joinRoom(roomId, { userId: 'player-1', userName: 'Alice' });
+await gameStream.setData(roomId, 'player-1', 'move', 'e2-e4');
+
+// Server validates that all commands match the room-id metadata
+```
+
+**Benefits of room-specific streaming:**
+- ✅ **Performance**: Only receive events from your room
+- ✅ **Bandwidth**: Reduced network traffic
+- ✅ **Validation**: Server ensures commands match the specified room
+- ✅ **Gaming**: Perfect for multiplayer games
+
+**When to use:**
+- `openStream()` - Admin dashboards, monitoring, multi-room apps
+- `openStream(roomId)` - Multiplayer games, collaborative tools, chat apps
+
+> 💡 **Unity Games**: Use `openStream(roomId)` for optimal performance in your multiplayer games!
+
 ## API Reference
 
 ### Room Management
