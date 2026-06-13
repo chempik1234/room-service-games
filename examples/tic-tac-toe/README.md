@@ -103,7 +103,7 @@ The Node.js server acts as a bridge between the browser and RoomService, since t
 ### Creating a Room
 
 ```typescript
-import { RoomServiceClient } from 'room-service-js';
+import { RoomServiceClient } from '@chempik1234/room-service-js';
 
 const client = new RoomServiceClient({
   host: 'localhost:50050',

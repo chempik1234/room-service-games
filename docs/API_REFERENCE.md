@@ -402,7 +402,7 @@ import {
   boolValue,
   listValue,
   mapValue
-} from 'room-service-js';
+} from '@chempik1234/room-service-js';
 
 stringValue('hello')
 intValue(42)
@@ -417,7 +417,7 @@ mapValue({ key: stringValue('value') })
 ## Error Handling
 
 ```javascript
-import { RoomServiceError } from 'room-service-js';
+import { RoomServiceError } from '@chempik1234/room-service-js';
 
 try {
   await client.createRoom({ max_users: '10' });

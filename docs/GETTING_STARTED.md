@@ -10,7 +10,7 @@ This guide will help you set up and use the RoomService JavaScript SDK.
 ## Installation
 
 ```bash
-npm install room-service-js
+npm install @chempik1234/room-service-js
 ```
 
 ## Setting Up RoomService
@@ -49,7 +49,7 @@ const client = new RoomServiceClient({
 Here's a complete example to get you started:
 
 ```javascript
-import { RoomServiceClient } from 'room-service-js';
+import { RoomServiceClient } from '@chempik1234/room-service-js';
 
 async function main() {
   // 1. Create a client
@@ -199,7 +199,7 @@ await client.removeFromList(roomId, userId, 'chatMessages', '0');
 For real-time games, use streaming:
 
 ```javascript
-import { RoomServiceClient } from 'room-service-js';
+import { RoomServiceClient } from '@chempik1234/room-service-js';
 
 const client = new RoomServiceClient();
 
@@ -246,7 +246,7 @@ playGame();
 ## Error Handling
 
 ```javascript
-import { RoomServiceError } from 'room-service-js';
+import { RoomServiceError } from '@chempik1234/room-service-js';
 
 try {
   await client.createRoom({ max_users: '10' });
@@ -277,7 +277,7 @@ try {
 mkdir my-game
 cd my-game
 npm init -y
-npm install room-service-js
+npm install @chempik1234/room-service-js
 ```
 
 ### TypeScript Setup
@@ -304,7 +304,7 @@ Or use `.mjs` extension for your files.
 If you're using CommonJS (require), the SDK still works:
 
 ```javascript
-const { RoomServiceClient } = require('room-service-js');
+const { RoomServiceClient } = require('@chempik1234/room-service-js');
 ```
 
 ## Testing Your Setup
@@ -312,7 +312,7 @@ const { RoomServiceClient } = require('room-service-js');
 Create a file `test.js`:
 
 ```javascript
-import { RoomServiceClient } from 'room-service-js';
+import { RoomServiceClient } from '@chempik1234/room-service-js';
 
 const client = new RoomServiceClient();
 

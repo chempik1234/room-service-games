@@ -121,7 +121,7 @@ SDK API: [paste the "For LLMs" section below]
 ### Installation
 
 ```bash
-npm install room-service-js
+npm install @chempik1234/room-service-js
 ```
 
 ### Environment
@@ -134,7 +134,7 @@ ROOM_SERVICE_API_KEY=123           # Default
 ### Main Client API
 
 ```javascript
-import { RoomServiceClient } from 'room-service-js';
+import { RoomServiceClient } from '@chempik1234/room-service-js';
 
 const client = new RoomServiceClient({
   host: 'localhost:50050',
@@ -308,7 +308,7 @@ await client.setData(roomId, userId, 'map', { key: 'value' });
 
 For explicit control:
 ```javascript
-import { stringValue, intValue, listValue, mapValue } from 'room-service-js';
+import { stringValue, intValue, listValue, mapValue } from '@chempik1234/room-service-js';
 await client.setData(roomId, userId, 'key', stringValue('hello'));
 await client.setData(roomId, userId, 'key', listValue([stringValue('a')]));
 ```
@@ -316,7 +316,7 @@ await client.setData(roomId, userId, 'key', listValue([stringValue('a')]));
 ### Error Handling
 
 ```javascript
-import { RoomServiceError } from 'room-service-js';
+import { RoomServiceError } from '@chempik1234/room-service-js';
 
 try {
   await client.createRoom({ max_users: '10' });

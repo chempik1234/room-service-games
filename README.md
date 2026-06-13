@@ -18,13 +18,13 @@
 ### Installation
 
 ```bash
-npm install room-service-js
+npm install @chempik1234/room-service-js
 ```
 
 ### Basic Usage
 
 ```javascript
-import { RoomServiceClient } from 'room-service-js';
+import { RoomServiceClient } from '@chempik1234/room-service-js';
 
 // Initialize client with multi-tenant proxy
 const client = new RoomServiceClient({
@@ -82,7 +82,7 @@ Just copy the hostname directly from your browser or control panel! 🎉
 For real-time games and collaborative apps:
 
 ```javascript
-import { RoomServiceClient } from 'room-service-js';
+import { RoomServiceClient } from '@chempik1234/room-service-js';
 
 const client = new RoomServiceClient();
 const stream = await client.openStream();
@@ -288,7 +288,7 @@ import {
   boolValue,
   listValue,
   mapValue
-} from 'room-service-js';
+} from '@chempik1234/room-service-js';
 
 await client.setData(roomId, userId, 'count', intValue(42));
 await client.setData(roomId, userId, 'tags', listValue([
@@ -300,7 +300,7 @@ await client.setData(roomId, userId, 'tags', listValue([
 ## Error Handling
 
 ```javascript
-import { RoomServiceError } from 'room-service-js';
+import { RoomServiceError } from '@chempik1234/room-service-js';
 
 try {
   await client.createRoom({ max_users: '10' });
